@@ -8,6 +8,7 @@ use kos::{
     hal::{KClipStartResponse, KClipStopResponse, ProcessManager},
     kos_proto::common::{Error, ErrorCode},
     services::TelemetryLogger,
+    telemetry::Telemetry,
 };
 use krec::combine_with_video;
 use std::env;
@@ -112,7 +113,7 @@ impl KBotProcessManager {
                     let buffer = sample.buffer().ok_or(gst::FlowError::Error)?;
 
                     let pts = buffer.pts();
-                    let telemetry = kos_core::telemetry::Telemetry::try_get();
+                    let telemetry = Telemetry::try_get();
                     if let Some(telemetry) = telemetry {
                         if let Some(pts) = pts {
                             telemetry.update_video_timestamp(pts.nseconds());
@@ -364,7 +365,7 @@ impl ProcessManager for KBotProcessManager {
             // Clear the pipeline
             *pipeline_guard = None;
 
-            let telemetry = kos_core::telemetry::Telemetry::try_get();
+            let telemetry = Telemetry::try_get();
             if let Some(telemetry) = telemetry {
                 telemetry.update_video_timestamp(0);
                 telemetry.update_frame_number(0);

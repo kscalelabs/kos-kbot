@@ -23,7 +23,7 @@ robstride = "0.3"
 gstreamer = "0.20"
 gstreamer-app = "0.20"
 gstreamer-video = "0.20"
-uuid = "1"
+uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["full"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 imu = ">=0.1.6"
