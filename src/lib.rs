@@ -270,7 +270,7 @@ impl Platform for KbotPlatform {
 
                 let imu = KBotIMU::new(
                     operations_service.clone(),
-                    "/dev/ttyCH341USB1",
+                    "/dev/ttyCH341USB0",
                     9600,
                 )
                 .wrap_err("Failed to create IMU")?;

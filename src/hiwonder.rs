@@ -9,15 +9,14 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::{Result, WrapErr};
-use imu::hiwonder::*;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::time::Duration;
 use tracing::{debug, error, info, trace};
+use imu::hiwonder::HiwonderReader;
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
-    imu: Arc<Mutex<imu::hiwonder::IMU>>,
+    imu: Arc<HiwonderReader>,
 }
 
 impl KBotIMU {
@@ -31,7 +30,7 @@ impl KBotIMU {
             interface, baud_rate
         );
 
-        let imu = match IMU::new(interface, baud_rate) {
+        let imu = match HiwonderReader::new(interface, baud_rate) {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
                 imu
@@ -44,7 +43,7 @@ impl KBotIMU {
 
         Ok(KBotIMU {
             _operations_service: operations_service,
-            imu: Arc::new(Mutex::new(imu)),
+            imu: Arc::new(imu),
         })
     }
 }
@@ -58,28 +57,26 @@ impl Default for KBotIMU {
 #[async_trait]
 impl HALIMU for KBotIMU {
     async fn get_values(&self) -> Result<ImuValuesResponse> {
-        let data = self.imu.lock().unwrap()
-            .read_data()
-            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?
-            .ok_or_else(|| eyre::eyre!("No IMU data available"))?;
+        let data = self.imu.get_data()
+            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
 
-        info!("data: {:?}", data); 
+        println!("data: {:?}", data);
 
-        trace!(
+        debug!(
             "Reading IMU values, accel x: {}, y: {}, z: {}, gyro x: {}, y: {}, z: {}, angle x: {}, y: {}, z: {}, quaternion x: {}, y: {}, z: {}, w: {}",
-            data.0[0], data.0[1], data.0[2],  // acc
-            data.1[0], data.1[1], data.1[2],  // gyro
-            data.2[0], data.2[1], data.2[2], // angle
-            data.3[0], data.3[1], data.3[2], data.3[3], // quaternion   
+            data.accelerometer[0], data.accelerometer[1], data.accelerometer[2],
+            data.gyroscope[0], data.gyroscope[1], data.gyroscope[2],
+            data.angle[0], data.angle[1], data.angle[2],
+            data.quaternion[0], data.quaternion[1], data.quaternion[2], data.quaternion[3],
         );
 
         Ok(ImuValuesResponse {
-            accel_x: data.0[0] as f64,
-            accel_y: data.0[1] as f64,
-            accel_z: data.0[2] as f64,
-            gyro_x: data.1[0] as f64,
-            gyro_y: data.1[1] as f64,
-            gyro_z: data.1[2] as f64,
+            accel_x: data.accelerometer[0] as f64,
+            accel_y: data.accelerometer[1] as f64,
+            accel_z: data.accelerometer[2] as f64,
+            gyro_x: data.gyroscope[0] as f64,
+            gyro_y: data.gyroscope[1] as f64,
+            gyro_z: data.gyroscope[2] as f64,
             mag_x: None,
             mag_y: None,
             mag_z: None,
@@ -127,31 +124,27 @@ impl HALIMU for KBotIMU {
 
     async fn get_euler(&self) -> Result<EulerAnglesResponse> {
         debug!("Reading Euler angles");
-        let data = self.imu.lock().unwrap()
-            .read_data()
-            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?
-            .ok_or_else(|| eyre::eyre!("No IMU data available"))?;
+        let data = self.imu.get_data()
+            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
 
         Ok(EulerAnglesResponse {
-            roll: data.2[0] as f64,
-            pitch: data.2[1] as f64,
-            yaw: data.2[2] as f64,
+            roll: data.angle[0] as f64,
+            pitch: data.angle[1] as f64,
+            yaw: data.angle[2] as f64,
             error: None,
         })
     }
 
     async fn get_quaternion(&self) -> Result<QuaternionResponse> {
         debug!("Reading quaternion");
-        let data = self.imu.lock().unwrap()
-            .read_data()
-            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?
-            .ok_or_else(|| eyre::eyre!("No IMU data available"))?;
+        let data = self.imu.get_data()
+            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
 
         Ok(QuaternionResponse {
-            x: data.3[0] as f64,
-            y: data.3[1] as f64,
-            z: data.3[2] as f64,
-            w: data.3[3] as f64,
+            x: data.quaternion[0] as f64,
+            y: data.quaternion[1] as f64,
+            z: data.quaternion[2] as f64,
+            w: data.quaternion[3] as f64,
             error: None
         })
     }
