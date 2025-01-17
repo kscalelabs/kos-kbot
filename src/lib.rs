@@ -18,8 +18,9 @@ use eyre::WrapErr;
 use kos::hal::Operation;
 use kos::kos_proto::actuator::actuator_service_server::ActuatorServiceServer;
 use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
+use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::{
-    services::{ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl},
+    services::{ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl, IMUServiceImpl},
     Platform, ServiceEnum,
 };
 use std::future::Future;
@@ -70,14 +71,13 @@ impl Platform for KbotPlatform {
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
                 let actuator = KBotActuator::new(
-                    operations_service,
+                    operations_service.clone(),
                     vec![
                         // "/dev/ttyCH341USB0",
                         // "/dev/ttyCH341USB1",
                         // "/dev/ttyCH341USB2",
                         // "/dev/ttyCH341USB3",
-                        // "can0",
-                        "can1", "can2",
+                        "can0", "can1", "can2", "can3", "can4",
                     ],
                     Duration::from_secs(1),
                     // Duration::from_nanos(3_333_333),
@@ -269,14 +269,14 @@ impl Platform for KbotPlatform {
                 .wrap_err("Failed to create actuator")?;
 
                 let imu = KBotIMU::new(
-                    operations_service,
-                    "usb0",
-                    115200,
+                    operations_service.clone(),
+                    "/dev/ttyCH341USB1",
+                    9600,
                 )
                 .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
-                    ServiceEnum::IMU(IMUServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),

@@ -1,7 +1,7 @@
 use kos::{
     hal::{
         EulerAnglesResponse, ImuAdvancedValuesResponse, ImuValuesResponse, Operation,
-        QuaternionResponse, IMU,
+        QuaternionResponse, IMU as HALIMU,
     },
     kos_proto::common::{ActionResponse, Error, ErrorCode},
     services::OperationsServiceImpl,
@@ -11,12 +11,13 @@ use async_trait::async_trait;
 use eyre::{Result, WrapErr};
 use imu::hiwonder::*;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use tracing::{debug, error, info, trace};
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
-    imu: IMU,
+    imu: Arc<Mutex<imu::hiwonder::IMU>>,
 }
 
 impl KBotIMU {
@@ -43,7 +44,7 @@ impl KBotIMU {
 
         Ok(KBotIMU {
             _operations_service: operations_service,
-            imu,
+            imu: Arc::new(Mutex::new(imu)),
         })
     }
 }
@@ -55,18 +56,21 @@ impl Default for KBotIMU {
 }
 
 #[async_trait]
-impl IMU for KBotIMU {
+impl HALIMU for KBotIMU {
     async fn get_values(&self) -> Result<ImuValuesResponse> {
-        let mut imu = self.imu.clone();
-        let data = imu
+        let data = self.imu.lock().unwrap()
             .read_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?
             .ok_or_else(|| eyre::eyre!("No IMU data available"))?;
 
+        info!("data: {:?}", data); 
+
         trace!(
-            "Reading IMU values, accel x: {}, y: {}, z: {}, gyro x: {}, y: {}, z: {}",
+            "Reading IMU values, accel x: {}, y: {}, z: {}, gyro x: {}, y: {}, z: {}, angle x: {}, y: {}, z: {}, quaternion x: {}, y: {}, z: {}, w: {}",
             data.0[0], data.0[1], data.0[2],  // acc
             data.1[0], data.1[1], data.1[2],  // gyro
+            data.2[0], data.2[1], data.2[2], // angle
+            data.3[0], data.3[1], data.3[2], data.3[3], // quaternion   
         );
 
         Ok(ImuValuesResponse {
@@ -123,8 +127,7 @@ impl IMU for KBotIMU {
 
     async fn get_euler(&self) -> Result<EulerAnglesResponse> {
         debug!("Reading Euler angles");
-        let mut imu = self.imu.clone();
-        let data = imu
+        let data = self.imu.lock().unwrap()
             .read_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?
             .ok_or_else(|| eyre::eyre!("No IMU data available"))?;
@@ -139,8 +142,7 @@ impl IMU for KBotIMU {
 
     async fn get_quaternion(&self) -> Result<QuaternionResponse> {
         debug!("Reading quaternion");
-        let mut imu = self.imu.clone();
-        let data = imu
+        let data = self.imu.lock().unwrap()
             .read_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?
             .ok_or_else(|| eyre::eyre!("No IMU data available"))?;
@@ -150,7 +152,7 @@ impl IMU for KBotIMU {
             y: data.3[1] as f64,
             z: data.3[2] as f64,
             w: data.3[3] as f64,
-            error: None,
+            error: None
         })
     }
 }

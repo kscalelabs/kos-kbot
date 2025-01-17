@@ -14,7 +14,7 @@ repository = "https://github.com/kscalelabs/kos-kbot"
 description = "KOS platform for KBot"
 
 [dependencies]
-kos = "0.3"
+kos = "0.5"
 eyre = "0.6"
 krec = "0.2"
 tracing = "0.1"
