@@ -2,13 +2,15 @@ mod actuator;
 mod process_manager;
 
 #[cfg(target_os = "linux")]
-mod hexmove;
+// mod hexmove;
+mod hiwonder;
 
 pub use actuator::*;
 pub use robstride::{ActuatorConfiguration, ActuatorType};
 
 #[cfg(target_os = "linux")]
-pub use hexmove::*;
+// pub use hexmove::*;
+pub use hiwonder::*;
 pub use process_manager::*;
 
 use async_trait::async_trait;
@@ -266,7 +268,15 @@ impl Platform for KbotPlatform {
                 .await
                 .wrap_err("Failed to create actuator")?;
 
+                let imu = KBotIMU::new(
+                    operations_service,
+                    "usb0",
+                    115200,
+                )
+                .wrap_err("Failed to create IMU")?;
+
                 Ok(vec![
+                    ServiceEnum::IMU(IMUServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),
