@@ -30,11 +30,14 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install dependencies
+        run: make deps
+
       - name: Lint
-        run: cargo clippy
+        run: make lint
 
       - name: Check
-        run: cargo check
+        run: make check
 
       - name: Build
-        run: cargo build
+        run: make build
