@@ -15,6 +15,7 @@ description = "KOS platform for KBot"
 
 [dependencies]
 kos = "0.5"
+kbot-pwrbrd = "0.1.1"
 eyre = "0.6"
 krec = "0.2"
 tracing = "0.1"

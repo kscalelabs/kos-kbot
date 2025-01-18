@@ -21,18 +21,52 @@ use kos::kos_proto::process_manager::process_manager_service_server::ProcessMana
 use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::{
     services::{ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl, IMUServiceImpl},
+    telemetry::Telemetry,
     Platform, ServiceEnum,
 };
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+use kbot_pwrbrd::PowerBoard;
+use eyre::eyre;
 
 pub struct KbotPlatform {}
 
 impl KbotPlatform {
     pub fn new() -> Self {
         Self {}
+    }
+
+    fn initialize_powerboard(&self) -> eyre::Result<()> {
+        let board = PowerBoard::new("can0")
+            .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
+        
+        // Spawn power monitoring loop
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            loop {
+                interval.tick().await;
+                
+                let data = match board.query_data() {
+                    Ok(data) => data,
+                    Err(e) => {
+                        tracing::error!("Error querying power board: {}", e.to_string());
+                        continue;
+                    }
+                };
+                
+                let telemetry = Telemetry::get().await;
+                if let Some(telemetry) = telemetry {
+                    if let Err(e) = telemetry.publish("powerboard/data", &data).await {
+                        tracing::error!("Failed to publish power board data: {:?}", e);
+                    }
+                }
+                tracing::trace!("Power board data: {:?}", data);
+            }
+        });
+
+        Ok(())
     }
 }
 
@@ -55,13 +89,11 @@ impl Platform for KbotPlatform {
 
     fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
         // Initialize the platform
+        self.initialize_powerboard()?;
         Ok(())
     }
 
-    fn create_services<'a>(
-        &'a self,
-        operations_service: Arc<OperationsServiceImpl>,
-    ) -> Pin<Box<dyn Future<Output = eyre::Result<Vec<ServiceEnum>>> + Send + 'a>> {
+    fn create_services<'a>(&'a self, operations_service: Arc<OperationsServiceImpl>) -> Pin<Box<dyn Future<Output = eyre::Result<Vec<ServiceEnum>>> + Send + 'a>> {
         Box::pin(async move {
             if cfg!(target_os = "linux") {
                 tracing::debug!("Initializing KBot services for Linux");
@@ -77,7 +109,8 @@ impl Platform for KbotPlatform {
                         // "/dev/ttyCH341USB1",
                         // "/dev/ttyCH341USB2",
                         // "/dev/ttyCH341USB3",
-                        "can0", "can1", "can2", "can3", "can4",
+                        // "can0",
+                        "can1", "can2", "can3", "can4",
                     ],
                     Duration::from_secs(1),
                     // Duration::from_nanos(3_333_333),
