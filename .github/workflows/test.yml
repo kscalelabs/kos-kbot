@@ -33,6 +33,8 @@ jobs:
             /var/lib/apt/lists
             /var/cache/apt/archives
           key: ${{ runner.os }}-apt-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
 
       - name: Install Protoc
         run: |
