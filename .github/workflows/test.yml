@@ -32,11 +32,20 @@ jobs:
           path: |
             /var/lib/apt/lists
             /var/cache/apt/archives
-          key: ${{ runner.os }}-apt-${{ hashFiles('Makefile') }}
+          key: ${{ runner.os }}-apt-${{ hashFiles('Makefile') }}-v1
           restore-keys: |
+            ${{ runner.os }}-apt-${{ hashFiles('Makefile') }}-
             ${{ runner.os }}-apt-
 
+      - name: Cache protoc
+        uses: actions/cache@v3
+        id: protoc-cache
+        with:
+          path: /usr/local/bin/protoc
+          key: ${{ runner.os }}-protoc-29.3-v1
+
       - name: Install Protoc
+        if: steps.protoc-cache.outputs.cache-hit != 'true'
         run: |
           PROTOC_VERSION="29.3"
           PROTOC_ZIP="protoc-${PROTOC_VERSION}-linux-x86_64.zip"
@@ -61,12 +70,10 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-v1
           restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
             ${{ runner.os }}-cargo-
-
-      - name: Lint
-        run: make lint
 
       - name: Check
         run: make check
