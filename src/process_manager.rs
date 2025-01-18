@@ -12,7 +12,7 @@ use kos::{
 };
 use krec::combine_with_video;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -37,7 +37,7 @@ impl KBotProcessManager {
         })
     }
 
-    fn create_pipeline(video_path: &PathBuf) -> Result<(gst::Pipeline, gst::Element)> {
+    fn create_pipeline(video_path: &Path) -> Result<(gst::Pipeline, gst::Element)> {
         let pipeline = gst::Pipeline::new(None);
 
         // Create elements
@@ -160,7 +160,7 @@ impl KBotProcessManager {
                 &tee,
                 &queue_monitor,
                 &queue_record,
-                &appsink.upcast_ref(),
+                appsink.upcast_ref(),
                 &encoder,
                 &parser,
                 &muxer,
@@ -179,7 +179,7 @@ impl KBotProcessManager {
         ])?;
 
         // Link monitoring branch
-        gst::Element::link_many(&[&queue_monitor, &appsink.upcast_ref()])?;
+        gst::Element::link_many(&[&queue_monitor, appsink.upcast_ref()])?;
 
         // Link recording branch
         gst::Element::link_many(&[&queue_record, &encoder, &parser, &muxer, &sink])?;

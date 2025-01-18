@@ -33,12 +33,12 @@ impl KBotActuator {
             if port.starts_with("/dev/tty") {
                 let serial = CH341Transport::new(port.to_string()).await?;
                 supervisor
-                    .add_transport(format!("{}", port), TransportType::CH341(serial))
+                    .add_transport(port.to_string(), TransportType::CH341(serial))
                     .await?;
             } else if port.starts_with("can") {
                 let can = SocketCanTransport::new(port.to_string()).await?;
                 supervisor
-                    .add_transport(format!("{}", port), TransportType::SocketCAN(can))
+                    .add_transport(port.to_string(), TransportType::SocketCAN(can))
                     .await?;
             } else {
                 return Err(eyre::eyre!("Invalid port: {}", port));

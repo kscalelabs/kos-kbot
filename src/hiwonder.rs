@@ -3,16 +3,16 @@ use kos::{
         EulerAnglesResponse, ImuAdvancedValuesResponse, ImuValuesResponse, Operation,
         QuaternionResponse, IMU as HALIMU,
     },
-    kos_proto::common::{ActionResponse, Error, ErrorCode},
+    kos_proto::common::ActionResponse,
     services::OperationsServiceImpl,
 };
 
 use async_trait::async_trait;
-use eyre::{Result, WrapErr};
+use eyre::Result;
+use imu::hiwonder::HiwonderReader;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, info, trace};
-use imu::hiwonder::HiwonderReader;
+use tracing::{debug, error, info};
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
@@ -57,7 +57,9 @@ impl Default for KBotIMU {
 #[async_trait]
 impl HALIMU for KBotIMU {
     async fn get_values(&self) -> Result<ImuValuesResponse> {
-        let data = self.imu.get_data()
+        let data = self
+            .imu
+            .get_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
 
         println!("data: {:?}", data);
@@ -124,7 +126,9 @@ impl HALIMU for KBotIMU {
 
     async fn get_euler(&self) -> Result<EulerAnglesResponse> {
         debug!("Reading Euler angles");
-        let data = self.imu.get_data()
+        let data = self
+            .imu
+            .get_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
 
         Ok(EulerAnglesResponse {
@@ -137,7 +141,9 @@ impl HALIMU for KBotIMU {
 
     async fn get_quaternion(&self) -> Result<QuaternionResponse> {
         debug!("Reading quaternion");
-        let data = self.imu.get_data()
+        let data = self
+            .imu
+            .get_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
 
         Ok(QuaternionResponse {
@@ -145,7 +151,7 @@ impl HALIMU for KBotIMU {
             y: data.quaternion[1] as f64,
             z: data.quaternion[2] as f64,
             w: data.quaternion[3] as f64,
-            error: None
+            error: None,
         })
     }
 }

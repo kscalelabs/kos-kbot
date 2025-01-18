@@ -14,13 +14,17 @@ pub use hiwonder::*;
 pub use process_manager::*;
 
 use async_trait::async_trait;
+use eyre::eyre;
 use eyre::WrapErr;
+use kbot_pwrbrd::PowerBoard;
 use kos::hal::Operation;
 use kos::kos_proto::actuator::actuator_service_server::ActuatorServiceServer;
-use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
 use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
+use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
 use kos::{
-    services::{ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl, IMUServiceImpl},
+    services::{
+        ActuatorServiceImpl, IMUServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl,
+    },
     telemetry::Telemetry,
     Platform, ServiceEnum,
 };
@@ -28,8 +32,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use kbot_pwrbrd::PowerBoard;
-use eyre::eyre;
 
 pub struct KbotPlatform {}
 
@@ -41,13 +43,13 @@ impl KbotPlatform {
     fn initialize_powerboard(&self) -> eyre::Result<()> {
         let board = PowerBoard::new("can0")
             .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
-        
+
         // Spawn power monitoring loop
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
                 interval.tick().await;
-                
+
                 let data = match board.query_data() {
                     Ok(data) => data,
                     Err(e) => {
@@ -55,7 +57,7 @@ impl KbotPlatform {
                         continue;
                     }
                 };
-                
+
                 let telemetry = Telemetry::get().await;
                 if let Some(telemetry) = telemetry {
                     if let Err(e) = telemetry.publish("powerboard/data", &data).await {
@@ -93,7 +95,10 @@ impl Platform for KbotPlatform {
         Ok(())
     }
 
-    fn create_services<'a>(&'a self, operations_service: Arc<OperationsServiceImpl>) -> Pin<Box<dyn Future<Output = eyre::Result<Vec<ServiceEnum>>> + Send + 'a>> {
+    fn create_services<'a>(
+        &'a self,
+        operations_service: Arc<OperationsServiceImpl>,
+    ) -> Pin<Box<dyn Future<Output = eyre::Result<Vec<ServiceEnum>>> + Send + 'a>> {
         Box::pin(async move {
             if cfg!(target_os = "linux") {
                 tracing::debug!("Initializing KBot services for Linux");
@@ -301,12 +306,8 @@ impl Platform for KbotPlatform {
                 .await
                 .wrap_err("Failed to create actuator")?;
 
-                let imu = KBotIMU::new(
-                    operations_service.clone(),
-                    "/dev/ttyCH341USB0",
-                    9600,
-                )
-                .wrap_err("Failed to create IMU")?;
+                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
+                    .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
                     ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
