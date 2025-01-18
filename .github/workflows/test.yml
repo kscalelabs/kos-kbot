@@ -1,4 +1,4 @@
-name: Python Checks
+name: Rust Checks
 
 on:
   push:
