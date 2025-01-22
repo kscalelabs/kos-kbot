@@ -14,8 +14,8 @@ repository = "https://github.com/kscalelabs/kos-kbot"
 description = "KOS platform for KBot"
 
 [dependencies]
-kos = "0.5"
-kbot-pwrbrd = "0.1.1"
+kos = {path="../kos/kos"}
+kbot-pwrbrd = "0.1.2"
 eyre = "0.6"
 krec = "0.2"
 tracing = "0.1"
@@ -25,7 +25,9 @@ gstreamer = "0.20"
 gstreamer-app = "0.20"
 gstreamer-video = "0.20"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "tracing"] }
+tracing-subscriber = "0.3"
+console-subscriber = "0.4"
 [target.'cfg(target_os = "linux")'.dependencies]
 imu = ">=0.2.2"
 chrono = "0.4"
