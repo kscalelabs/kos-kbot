@@ -179,6 +179,7 @@ impl Actuator for KBotActuator {
                     temperature: Some(feedback.temperature as f64),
                     voltage: None,
                     current: None,
+                    faults: vec![],
                 });
             }
         }
