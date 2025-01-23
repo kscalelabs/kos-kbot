@@ -44,28 +44,33 @@ impl KbotPlatform {
         let board = PowerBoard::new("can0")
             .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
-        // Spawn power monitoring loop
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
-            loop {
-                interval.tick().await;
+        // Spawn power monitoring loop in a separate OS thread
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .expect("Failed to create runtime for power board monitoring");
+            
+            rt.block_on(async {
+                let mut interval = tokio::time::interval(Duration::from_secs(1));
+                loop {
+                    interval.tick().await;
 
-                let data = match board.query_data() {
-                    Ok(data) => data,
-                    Err(e) => {
-                        tracing::error!("Error querying power board: {}", e.to_string());
-                        continue;
-                    }
-                };
+                    let data = match board.query_data() {
+                        Ok(data) => data,
+                        Err(e) => {
+                            tracing::error!("Error querying power board: {}", e.to_string());
+                            continue;
+                        }
+                    };
 
-                let telemetry = Telemetry::get().await;
-                if let Some(telemetry) = telemetry {
-                    if let Err(e) = telemetry.publish("powerboard/data", &data).await {
-                        tracing::error!("Failed to publish power board data: {:?}", e);
+                    let telemetry = Telemetry::get().await;
+                    if let Some(telemetry) = telemetry {
+                        if let Err(e) = telemetry.publish("powerboard/data", &data).await {
+                            tracing::error!("Failed to publish power board data: {:?}", e);
+                        }
                     }
+                    tracing::trace!("Power board data: {:?}", data);
                 }
-                tracing::trace!("Power board data: {:?}", data);
-            }
+            });
         });
 
         Ok(())
@@ -126,7 +131,7 @@ impl Platform for KbotPlatform {
                             11,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -134,7 +139,7 @@ impl Platform for KbotPlatform {
                             12,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -142,7 +147,7 @@ impl Platform for KbotPlatform {
                             13,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -150,7 +155,7 @@ impl Platform for KbotPlatform {
                             14,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -158,24 +163,24 @@ impl Platform for KbotPlatform {
                             15,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
-                        (
-                            16,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride00,
-                                max_angle_change: Some(15.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
-                            },
-                        ),
+                        // (
+                        //     16,
+                        //     ActuatorConfiguration {
+                        //         actuator_type: ActuatorType::RobStride00,
+                        //         max_angle_change: Some(15.0f32.to_radians()),
+                        //         max_velocity: Some(10.0f32.to_radians()),
+                        //     },
+                        // ),
                         // Right Arm
                         (
                             21,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -183,7 +188,7 @@ impl Platform for KbotPlatform {
                             22,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -191,7 +196,7 @@ impl Platform for KbotPlatform {
                             23,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -199,7 +204,7 @@ impl Platform for KbotPlatform {
                             24,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -207,18 +212,18 @@ impl Platform for KbotPlatform {
                             25,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(15.0f32.to_radians()),
+                                max_angle_change: Some(30.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
-                        (
-                            26,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride00,
-                                max_angle_change: Some(15.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
-                            },
-                        ),
+                        // (
+                        //     26,
+                        //     ActuatorConfiguration {
+                        //         actuator_type: ActuatorType::RobStride00,
+                        //         max_angle_change: Some(15.0f32.to_radians()),
+                        //         max_velocity: Some(10.0f32.to_radians()),
+                        //     },
+                        // ),
                         // Left Leg
                         (
                             31,
@@ -232,7 +237,7 @@ impl Platform for KbotPlatform {
                             32,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
+                                max_angle_change: Some(45.0f32.to_radians()),
                                 max_velocity: Some(10.0f32.to_radians()),
                             },
                         ),
@@ -306,7 +311,9 @@ impl Platform for KbotPlatform {
                 .await
                 .wrap_err("Failed to create actuator")?;
 
-                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
+                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
+                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB1", 9600)
+                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB2", 9600)
                     .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
