@@ -9,7 +9,7 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::Result;
-use imu::hiwonder::HiwonderReader;
+use hiwonder::HiwonderReader;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info};
