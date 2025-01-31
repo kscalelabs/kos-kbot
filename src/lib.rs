@@ -61,8 +61,6 @@ impl KbotPlatform {
                 .expect("Failed to create runtime for power board monitoring");
             
             rt.block_on(async {
-                let mut general_time = None;
-                let mut limbs_time = None;
                 let mut counter = 0u64;
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
                 let mut shutdown_rx = shutdown_rx;
@@ -76,9 +74,7 @@ impl KbotPlatform {
                                 let telemetry = Telemetry::get().await;
                                 
                                 match frame {
-                                    PowerBoardFrame::General(status) => {
-                                        general_time = Some(std::time::Instant::now());
-                                        
+                                    PowerBoardFrame::General(status) => {                                        
                                         if let Some(telemetry) = &telemetry {
                                             let data = serde_json::json!({
                                                 "counter": counter,
@@ -90,15 +86,13 @@ impl KbotPlatform {
                                         }
 
                                         tracing::trace!(
-                                            "General[{}]: {:.2}V {:.2}A | Age: {}ms",
+                                            "General[{}]: {:.2}V {:.2}A",
                                             counter,
                                             status.battery_voltage,
                                             status.current,
-                                            general_time.map_or(9999, |t| t.elapsed().as_millis().min(9999))
                                         );
                                     }
                                     PowerBoardFrame::Limbs(status) => {
-                                        limbs_time = Some(std::time::Instant::now());
                                         
                                         if let Some(telemetry) = &telemetry {
                                             let data = serde_json::json!({
@@ -111,13 +105,12 @@ impl KbotPlatform {
                                         }
 
                                         tracing::trace!(
-                                            "Limbs[{}]: L:{:.1}W R:{:.1}W LA:{:.1}W RA:{:.1}W | Age: {}ms",
+                                            "Limbs[{}]: L:{:.1}W R:{:.1}W LA:{:.1}W RA:{:.1}W",
                                             counter,
                                             status.left_leg_power,
                                             status.right_leg_power,
                                             status.left_arm_power,
                                             status.right_arm_power,
-                                            limbs_time.map_or(9999, |t| t.elapsed().as_millis().min(9999))
                                         );
                                     }
                                     PowerBoardFrame::Unknown(_, _) => {}

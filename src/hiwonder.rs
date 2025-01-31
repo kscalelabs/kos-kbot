@@ -9,14 +9,14 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::Result;
-use hiwonder::HiwonderReader;
-use std::sync::Arc;
+use imu::hiwonder::{HiwonderReader, ImuFrequency};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
-    imu: Arc<HiwonderReader>,
+    imu: Arc<Mutex<HiwonderReader>>,
 }
 
 impl KBotIMU {
@@ -33,6 +33,9 @@ impl KBotIMU {
         let imu = match HiwonderReader::new(interface, baud_rate) {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
+                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100) {
+                    error!("Failed to set IMU frequency: {}", e);
+                }
                 imu
             }
             Err(e) => {
@@ -43,7 +46,7 @@ impl KBotIMU {
 
         Ok(KBotIMU {
             _operations_service: operations_service,
-            imu: Arc::new(imu),
+            imu: Arc::new(Mutex::new(imu)),
         })
     }
 }
@@ -59,10 +62,10 @@ impl HALIMU for KBotIMU {
     async fn get_values(&self) -> Result<ImuValuesResponse> {
         let data = self
             .imu
+            .lock()
+            .map_err(|e| eyre::eyre!("Failed to lock IMU mutex: {}", e))?
             .get_data()
-            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
-
-        println!("data: {:?}", data);
+            .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
 
         debug!(
             "Reading IMU values, accel x: {}, y: {}, z: {}, gyro x: {}, y: {}, z: {}, angle x: {}, y: {}, z: {}, quaternion x: {}, y: {}, z: {}, w: {}",
@@ -128,8 +131,10 @@ impl HALIMU for KBotIMU {
         debug!("Reading Euler angles");
         let data = self
             .imu
+            .lock()
+            .map_err(|e| eyre::eyre!("Failed to lock IMU mutex: {}", e))?
             .get_data()
-            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
+            .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
 
         Ok(EulerAnglesResponse {
             roll: data.angle[0] as f64,
@@ -143,8 +148,10 @@ impl HALIMU for KBotIMU {
         debug!("Reading quaternion");
         let data = self
             .imu
+            .lock()
+            .map_err(|e| eyre::eyre!("Failed to lock IMU mutex: {}", e))?
             .get_data()
-            .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
+            .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
 
         Ok(QuaternionResponse {
             x: data.quaternion[0] as f64,
