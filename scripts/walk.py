@@ -17,6 +17,8 @@ from scipy.spatial.transform import Rotation as R
 
 ARM_IDS = [11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26]
 
+upper_arm_ids = [11, 12, 13, 14, 15, 21, 22, 23, 24, 25]
+
 # Ordered joint names for policy (legs only, top-down, left-right order)
 JOINT_NAME_LIST = [
     "L_hip_y",    # Left leg, top to bottom
@@ -96,7 +98,8 @@ class RobotState:
         current_positions = {name: states.states[i].position for i, name in enumerate(joint_names)}
         
         # Store negative of current positions as offsets (in degrees)
-        self.joint_offsets = {name: -pos for name, pos in current_positions.items()}
+        # HACK: No offsets for now
+        self.joint_offsets = {name: 0.0 for name, _ in current_positions.items()}#-pos for name, pos in current_positions.items()}
 
         # Store IMU offset
         imu_data = await kos.imu.get_euler_angles()
@@ -184,10 +187,25 @@ async def run_robot(
         print("Configuring motors...")
         leg_ids = [JOINT_NAME_TO_ID[name] for name in JOINT_NAME_LIST]
         
-        # First disable torque and zero positions
+        # First disable torque
         for joint_id in leg_ids:
-            await kos.actuator.configure_actuator(actuator_id=joint_id, torque_enabled=False, zero_position=True)
+            await kos.actuator.configure_actuator(actuator_id=joint_id, torque_enabled=False, zero_position=False)
         await asyncio.sleep(1)
+
+        # Freeze upper arms in place
+        for arm_id in upper_arm_ids:
+            await kos.actuator.configure_actuator(actuator_id=arm_id, torque_enabled=False, zero_position=True)
+
+        await asyncio.sleep(1)
+
+        arm_commands = []
+        for arm_id in upper_arm_ids:
+            arm_commands.append({"actuator_id": arm_id, "position": 0.0})
+        await kos.actuator.command_actuators(arm_commands)
+
+        # enable upper arms
+        for arm_id in upper_arm_ids:
+            await kos.actuator.configure_actuator(actuator_id=arm_id, kp=150, kd=10, max_torque=100, torque_enabled=True)
 
         # Capture current position as zero
         print("Capturing current position as zero...")
@@ -228,6 +246,13 @@ async def run_robot(
         prev_actions = np.zeros(model_info["num_actions"], dtype=np.float32)
         hist_obs = np.zeros(model_info["num_observations"], dtype=np.float32)
         count_policy = 0
+
+        print(f"Going to zero position...")
+        await kos.actuator.command_actuators([{"actuator_id": joint_id, "position": 0.0} for joint_id in leg_ids])
+
+        for i in range(5, -1, -1):
+            print(f"Starting in {i} seconds...")
+            await asyncio.sleep(1)
 
         try:
             while True:
@@ -304,12 +329,12 @@ async def run_robot(
                 print(f"Average: {avg_time:.4f} seconds")
                 print(f"Median: {np.median(process_times):.4f} seconds")
                 print(f"Maximum: {max_time:.4f} seconds")
-                print(f"Num too slow: {len([t for t in process_times if t > 0.01])}")
-                print(f"Percentage too slow: {len([t for t in process_times if t > 0.01]) / len(process_times):.4f}")
+                print(f"Num too slow: {len([t for t in process_times if t > 0.02])}")
+                print(f"Percentage too slow: {len([t for t in process_times if t > 0.02]) / len(process_times):.4f}")
                 print(f"Total Iterations: {len(process_times)}")
         finally:
             # Disable torque on exit
-            for joint_id in leg_ids:
+            for joint_id in leg_ids + upper_arm_ids:
                 await kos.actuator.configure_actuator(actuator_id=joint_id, torque_enabled=False)
 
 async def main():
@@ -336,6 +361,8 @@ async def main():
             "default_standing": metadata["default_standing"],
             # "policy_dt": 1,
         }
+
+        print(f"Model Info: {model_info}")
 
         # Initialize velocity commands
         global x_vel_cmd, y_vel_cmd, yaw_vel_cmd
