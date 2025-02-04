@@ -22,7 +22,7 @@ krec = "0.2"
 tracing = "0.1"
 async-trait = "0.1"
 # robstride = "0.3"
-robstride = {version = "0.3.1", path="./local_crates/actuator/actuator/robstride"}
+robstride = {version = "0.3.2", path="./local_crates/actuator/actuator/robstride"}
 gstreamer = "0.20"
 gstreamer-app = "0.20"
 serde_json = "1.0"
