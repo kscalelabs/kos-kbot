@@ -68,6 +68,8 @@ JOINT_SIGNS = {
     "R_ankle": -1
 }
 
+ORN_OFFSET = [-1.1590576171875, -1.4337158203125, 55.6732177734375]
+
 def handle_keyboard_input() -> None:
     """Handle keyboard input for velocity commands."""
     global x_vel_cmd, y_vel_cmd, yaw_vel_cmd
@@ -106,9 +108,10 @@ class RobotState:
 
         # Store IMU offset
         imu_data = await kos.imu.get_euler_angles()
-        initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
-        self.orn_offset = R.from_quat(initial_quat).inv()
-
+        # initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
+        # self.orn_offset = R.from_quat(initial_quat).inv()
+        # HACK: Use identified pitch and roll offsets to avoid error on startup
+        self.orn_offset = R.from_euler('xyz', [ORN_OFFSET[0], ORN_OFFSET[1], imu_data.yaw], degrees=True).inv()
     async def get_obs(self, kos: KOS) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get robot state with offset compensation."""
         # Batch state requests
@@ -250,8 +253,13 @@ async def run_robot(
         hist_obs = np.zeros(model_info["num_observations"], dtype=np.float32)
         count_policy = 0
 
-        print(f"Going to zero position...")
-        await kos.actuator.command_actuators([{"actuator_id": joint_id, "position": 0.0} for joint_id in leg_ids])
+        print(f"Going to default position...")
+        default_commands = []
+        for i, joint_name in enumerate(JOINT_NAME_LIST):
+            joint_id = JOINT_NAME_TO_ID[joint_name]
+            position = robot_state.apply_command(float(default[i]), joint_name)
+            default_commands.append({"actuator_id": joint_id, "position": position})
+        await kos.actuator.command_actuators(default_commands)
 
         for i in range(5, -1, -1):
             print(f"Starting in {i} seconds...")
@@ -374,7 +382,7 @@ async def main():
             pygame.init()
             pygame.display.set_caption("Robot Control")
         else:
-            x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.2, 0.0, 0.0
+            x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.0, 0.0, 0.0
 
         # Run robot control
         await run_robot(
