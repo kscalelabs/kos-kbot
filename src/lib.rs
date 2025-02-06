@@ -419,6 +419,7 @@ impl Platform for KbotPlatform {
                             actuator_type: ActuatorType::RobStride04,
                             max_angle_change: Some(2.0f32.to_radians()),
                             max_velocity: Some(10.0f32.to_radians()),
+                            command_rate_hz: Some(100.0),
                         },
                     )],
                 )

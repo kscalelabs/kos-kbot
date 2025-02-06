@@ -1,31 +1,32 @@
 use kos::daemon::kos_runtime;
 use kos_kbot::KbotPlatform;
-// use tracing_subscriber::prelude::*;
-// use tracing_subscriber::filter::EnvFilter;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
+use std::fs::File;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // let console_layer = console_subscriber::spawn();
+    // // Create file appender
+    // let file = File::create("actuator.log")?;
+    // let file_writer = std::sync::Mutex::new(file);
 
+    // // Create stdout layer
     // let stdout_layer = tracing_subscriber::fmt::layer()
-    //     .with_writer(std::io::stdout)
-    //     .with_filter(
-    //         EnvFilter::from_default_env()
-    //             .add_directive("h2=error".parse().unwrap())
-    //             .add_directive("grpc=error".parse().unwrap())
-    //             .add_directive("rumqttc=error".parse().unwrap())
-    //             .add_directive("kos::telemetry=error".parse().unwrap())
-    //             .add_directive("polling=error".parse().unwrap())
-    //             .add_directive("async_io=error".parse().unwrap())
-    //             .add_directive("krec=error".parse().unwrap()),
-    //     );
+    //     .with_writer(std::io::stdout);
 
+    // // Create file layer
+    // let file_layer = tracing_subscriber::fmt::layer()
+    //     .with_writer(file_writer.with_max_level(tracing::Level::DEBUG))
+    //     .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+    //         // Only log messages from the robstride crate
+    //         metadata.target().starts_with("robstride")
+    //     }));
 
-//     tracing_subscriber::registry()
-//     .with(console_layer)
-//     .with(stdout_layer)
-// //  .with(..potential additional layer..)
-//     .init();
+    // // Initialize subscriber with both layers
+    // tracing_subscriber::registry()
+    //     .with(stdout_layer)
+    //     .with(file_layer)
+    //     .init();
 
     let platform = Box::new(KbotPlatform::new());
     kos_runtime(platform).await.map_err(|e| {

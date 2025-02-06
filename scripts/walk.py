@@ -71,6 +71,9 @@ MOTOR_TYPE_TO_METADATA_INDEX = {
     "02": 2,
 }
 
+ORN_OFFSET = [-1.1590576171875, -1.4337158203125, 55.6732177734375]
+
+
 def handle_keyboard_input() -> None:
     """Handle keyboard input for velocity commands."""
     global x_vel_cmd, y_vel_cmd, yaw_vel_cmd
@@ -109,8 +112,9 @@ class RobotState:
 
         # Store IMU offset
         imu_data = await kos.imu.get_euler_angles()
-        initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
-        self.orn_offset = R.from_quat(initial_quat).inv()
+        # initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
+        # self.orn_offset = R.from_quat(initial_quat).inv()
+        self.orn_offset = R.from_euler('xyz', [ORN_OFFSET[0], ORN_OFFSET[1], ORN_OFFSET[2]], degrees=True).inv()
 
     async def get_obs(self, kos: KOS) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get robot state with offset compensation."""
@@ -148,7 +152,7 @@ class RobotState:
         gyro_x = imu_sensor_data.gyro_x or 0.0
         gyro_y = imu_sensor_data.gyro_y or 0.0
         gyro_z = imu_sensor_data.gyro_z or 0.0
-        omega = np.deg2rad(np.array([gyro_x, gyro_y, gyro_z]))
+        omega = np.deg2rad(np.array([-gyro_z, -gyro_y, gyro_x])) # TODO: Check if this is correct
 
         return q, dq, quat, gvec, omega
 
