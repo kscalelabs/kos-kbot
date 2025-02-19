@@ -48,7 +48,7 @@ impl KbotPlatform {
         let board = PowerBoard::new("can0")
         .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
-        Spawn power monitoring loop
+        // Spawn power monitoring loop
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
