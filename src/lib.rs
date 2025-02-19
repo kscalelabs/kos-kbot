@@ -1,16 +1,20 @@
-mod actuator;
-mod process_manager;
-
 #[cfg(target_os = "linux")]
 // mod hexmove;
 mod hiwonder;
-
-pub use actuator::*;
+mod inspirehand;
+mod process_manager;
+mod proxyactuator;
+mod rh56actuator;
+mod rsactuator;
+pub use proxyactuator::*;
+pub use rh56actuator::*;
 pub use robstride::{ActuatorConfiguration, ActuatorType};
+pub use rsactuator::*;
 
 #[cfg(target_os = "linux")]
 // pub use hexmove::*;
 pub use hiwonder::*;
+pub use inspirehand::*;
 pub use process_manager::*;
 
 use async_trait::async_trait;
@@ -42,9 +46,9 @@ impl KbotPlatform {
 
     fn initialize_powerboard(&self) -> eyre::Result<()> {
         let board = PowerBoard::new("can0")
-            .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
+        .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
-        // Spawn power monitoring loop
+        Spawn power monitoring loop
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(1));
             loop {
@@ -107,7 +111,12 @@ impl Platform for KbotPlatform {
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
-                let actuator = KBotActuator::new(
+                // Create RH56 actuator for hand control (IDs 51-56)
+                let rh56 =
+                    RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB1", 1, 51).await?;
+
+                // Create RobStride actuator for robot joints (IDs 11-45)
+                let rs = RSActuator::new(
                     operations_service.clone(),
                     vec![
                         // "/dev/ttyCH341USB0",
@@ -306,20 +315,23 @@ impl Platform for KbotPlatform {
                 .await
                 .wrap_err("Failed to create actuator")?;
 
-                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
-                //    .wrap_err("Failed to create IMU")?;
+                // Create proxy actuator that combines both
+                let proxy = ProxyActuator::new(vec![
+                    (Box::new(rh56), 51..=56), // Hand control
+                    (Box::new(rs), 11..=45),   // Robot joints
+                ]);
 
                 Ok(vec![
                     // ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
-                        Arc::new(actuator),
+                        Arc::new(proxy),
                     ))),
                     ServiceEnum::ProcessManager(ProcessManagerServiceServer::new(
                         ProcessManagerServiceImpl::new(Arc::new(process_manager)),
                     )),
                 ])
             } else {
-                let actuator = KBotActuator::new(
+                let actuator = RSActuator::new(
                     operations_service,
                     vec!["can0"],
                     Duration::from_secs(1),

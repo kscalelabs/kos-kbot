@@ -1,0 +1,10 @@
+[build]
+default-target = "aarch64-unknown-linux-gnu"
+pre-build = [
+    "apt-get update && apt-get install -y wget unzip libudev-dev:arm64 gcc-aarch64-linux-gnu",
+    "PROTOC_ARCH=$(uname -m | sed 's/aarch64/aarch_64/'); wget -q https://github.com/protocolbuffers/protobuf/releases/download/v29.3/protoc-29.3-linux-${PROTOC_ARCH}.zip",
+    "unzip -q protoc-29.3-linux-${PROTOC_ARCH}.zip -d protoc",
+    "cp protoc/bin/protoc /usr/local/bin/",
+    "cp -r protoc/include/google /usr/local/include/",
+    "rm -rf protoc*"
+]
