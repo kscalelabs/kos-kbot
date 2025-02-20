@@ -401,7 +401,7 @@ impl Platform for KbotPlatform {
                     .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
-                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    // ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),
