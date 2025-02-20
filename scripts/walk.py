@@ -112,9 +112,9 @@ class RobotState:
 
         # Store IMU offset
         imu_data = await kos.imu.get_euler_angles()
-        # initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
-        # self.orn_offset = R.from_quat(initial_quat).inv()
-        self.orn_offset = R.from_euler('xyz', [ORN_OFFSET[0], ORN_OFFSET[1], ORN_OFFSET[2]], degrees=True).inv()
+        initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
+        self.orn_offset = R.from_quat(initial_quat).inv()
+        # self.orn_offset = R.from_euler('xyz', [ORN_OFFSET[0], ORN_OFFSET[1], ORN_OFFSET[2]], degrees=True).inv()
 
     async def get_obs(self, kos: KOS) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get robot state with offset compensation."""
@@ -152,7 +152,7 @@ class RobotState:
         gyro_x = imu_sensor_data.gyro_x or 0.0
         gyro_y = imu_sensor_data.gyro_y or 0.0
         gyro_z = imu_sensor_data.gyro_z or 0.0
-        omega = np.deg2rad(np.array([-gyro_z, -gyro_y, gyro_x])) # TODO: Check if this is correct
+        omega = np.deg2rad(np.array([-gyro_x, -gyro_y, gyro_z])) # TODO: Check if this is correct
 
         return q, dq, quat, gvec, omega
 
@@ -254,8 +254,40 @@ async def run_robot(
         hist_obs = np.zeros(model_info["num_observations"], dtype=np.float32)
         count_policy = 0
 
-        print(f"Going to zero position...")
-        await kos.actuator.command_actuators([{"actuator_id": joint_id, "position": 0.0} for joint_id in leg_ids])
+        # print(f"Going to zero position...")
+        # await kos.actuator.command_actuators([{"actuator_id": joint_id, "position": 0.0} for joint_id in leg_ids])
+
+        print(f"Going to default position...")
+        current_commands = [0.0] * len(JOINT_NAME_LIST)
+        target_commands = [float(default[i]) for i in range(len(JOINT_NAME_LIST))]
+        
+        # Keep moving until all joints are within 0.1 degrees of their targets
+        while any(abs(current - target) > 0.1 for current, target in zip(current_commands, target_commands)):
+            # Update commands with 0.5 degree steps towards target
+            for i in range(len(current_commands)):
+                if current_commands[i] < target_commands[i]:
+                    current_commands[i] = min(current_commands[i] + 0.1, target_commands[i])
+                elif current_commands[i] > target_commands[i]:
+                    current_commands[i] = max(current_commands[i] - 0.1, target_commands[i])
+            
+            # Send commands to motors
+            default_commands = []
+            for i, joint_name in enumerate(JOINT_NAME_LIST):
+                joint_id = JOINT_NAME_TO_ID[joint_name]
+                position = robot_state.apply_command(current_commands[i], joint_name)
+                default_commands.append({"actuator_id": joint_id, "position": position})
+            await kos.actuator.command_actuators(default_commands)
+            
+            # Small delay to allow motors to move
+            await asyncio.sleep(0.1)
+
+        # Finally, command default position
+        default_commands = []
+        for i, joint_name in enumerate(JOINT_NAME_LIST):
+            joint_id = JOINT_NAME_TO_ID[joint_name]
+            position = robot_state.apply_command(float(default[i]), joint_name)
+            default_commands.append({"actuator_id": joint_id, "position": position})
+        await kos.actuator.command_actuators(default_commands)
 
         for i in range(5, -1, -1):
             print(f"Starting in {i} seconds...")
@@ -299,7 +331,7 @@ async def run_robot(
 
                     # Run policy
                     policy_output = policy(input_data)
-                    target_q = policy_output["actions_scaled"]
+                    target_q = policy_output["actions_scaled"] * 1.0
                     prev_actions = policy_output["actions"]
                     hist_obs = policy_output["x.3"]
 

@@ -121,9 +121,9 @@ impl Actuator for KBotActuator {
         let control_config = ControlConfig {
             kp: config.kp.unwrap_or(0.0) as f32,
             kd: config.kd.unwrap_or(0.0) as f32,
-            max_torque: Some(config.max_torque.unwrap_or(2.0) as f32),
-            max_velocity: Some(5.0),
-            max_current: Some(10.0),
+            max_torque: Some(config.max_torque.unwrap_or(120.0) as f32),
+            max_velocity: Some(1000.0),
+            max_current: Some(1000.0),
         };
 
         let mut supervisor = self.supervisor.lock().await;
