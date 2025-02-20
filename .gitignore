@@ -6,3 +6,5 @@ target/
 
 # Local crates
 local_crates/
+
+logs/
