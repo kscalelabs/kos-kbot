@@ -16,22 +16,25 @@ pub use process_manager::*;
 use async_trait::async_trait;
 use eyre::eyre;
 use eyre::WrapErr;
-use kbot_pwrbrd::PowerBoard;
+use kbot_pwrbrd::{PowerBoard, PowerBoardFrame};
 use kos::hal::Operation;
 use kos::kos_proto::actuator::actuator_service_server::ActuatorServiceServer;
 use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
 use kos::{
     services::{
-        ActuatorServiceImpl, IMUServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl,
+        ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl, IMUServiceImpl
     },
     telemetry::Telemetry,
     Platform, ServiceEnum,
 };
+use once_cell::sync::OnceCell;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+
+const USE_POWERBOARD: bool = true;
 
 pub struct KbotPlatform {}
 
@@ -44,28 +47,87 @@ impl KbotPlatform {
         let board = PowerBoard::new("can0")
             .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
-        // Spawn power monitoring loop
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
-            loop {
-                interval.tick().await;
+        tracing::info!("Initializing power board monitoring on can0");
+        board
+            .configure_board()
+            .map_err(|e| eyre!("Failed to configure power board: {}", e))?;
 
-                let data = match board.query_data() {
-                    Ok(data) => data,
-                    Err(e) => {
-                        tracing::error!("Error querying power board: {}", e.to_string());
-                        continue;
-                    }
-                };
+        // Create a shutdown channel
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
 
-                let telemetry = Telemetry::get().await;
-                if let Some(telemetry) = telemetry {
-                    if let Err(e) = telemetry.publish("powerboard/data", &data).await {
-                        tracing::error!("Failed to publish power board data: {:?}", e);
+        // Store sender in a static or global location for shutdown
+        SHUTDOWN_SIGNAL.get_or_init(|| parking_lot::Mutex::new(Some(shutdown_tx)));
+
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Runtime::new()
+                .expect("Failed to create runtime for power board monitoring");
+
+            rt.block_on(async {
+                let mut counter = 0u64;
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
+                let mut shutdown_rx = shutdown_rx;
+
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {
+                            counter = counter.wrapping_add(1);
+
+                            if let Ok(Some(frame)) = board.read_frame() {
+                                let telemetry = Telemetry::get().await;
+
+                                match frame {
+                                    PowerBoardFrame::General(status) => {
+                                        if let Some(telemetry) = &telemetry {
+                                            let data = serde_json::json!({
+                                                "counter": counter,
+                                                "data": status,
+                                            });
+                                            if let Err(e) = telemetry.publish("powerboard/general", &data).await {
+                                                tracing::error!("Failed to publish power board general data: {:?}", e);
+                                            }
+                                        }
+
+                                        tracing::trace!(
+                                            "General[{}]: {:.2}V {:.2}A",
+                                            counter,
+                                            status.battery_voltage,
+                                            status.current,
+                                        );
+                                    }
+                                    PowerBoardFrame::Limbs(status) => {
+
+                                        if let Some(telemetry) = &telemetry {
+                                            let data = serde_json::json!({
+                                                "counter": counter,
+                                                "data": status,
+                                            });
+                                            if let Err(e) = telemetry.publish("powerboard/limbs", &data).await {
+                                                tracing::error!("Failed to publish power board limbs data: {:?}", e);
+                                            }
+                                        }
+
+                                        tracing::trace!(
+                                            "Limbs[{}]: L:{:.1}W R:{:.1}W LA:{:.1}W RA:{:.1}W",
+                                            counter,
+                                            status.left_leg_power,
+                                            status.right_leg_power,
+                                            status.left_arm_power,
+                                            status.right_arm_power,
+                                        );
+                                    }
+                                    PowerBoardFrame::Unknown(_, _) => {}
+                                }
+                            }else{
+                                tracing::error!("Failed to read power board frame");
+                            }
+                        }
+                        Ok(_) = shutdown_rx.changed() => {
+                            tracing::info!("Shutting down power board monitoring");
+                            break;
+                        }
                     }
                 }
-                tracing::trace!("Power board data: {:?}", data);
-            }
+            });
         });
 
         Ok(())
@@ -75,6 +137,13 @@ impl KbotPlatform {
 impl Default for KbotPlatform {
     fn default() -> Self {
         KbotPlatform::new()
+    }
+}
+
+impl Drop for KbotPlatform {
+    fn drop(&mut self) {
+        // Ensure shutdown is called when the platform is dropped
+        let _ = self.shutdown();
     }
 }
 
@@ -91,7 +160,9 @@ impl Platform for KbotPlatform {
 
     fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
         // Initialize the platform
-        self.initialize_powerboard()?;
+        if USE_POWERBOARD {
+            self.initialize_powerboard()?;
+        }
         Ok(())
     }
 
@@ -106,6 +177,8 @@ impl Platform for KbotPlatform {
                 let process_manager =
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
+
+                let max_vel = 7200.0f32.to_radians();
 
                 let actuator = KBotActuator::new(
                     operations_service.clone(),
@@ -127,7 +200,8 @@ impl Platform for KbotPlatform {
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
                                 max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
@@ -135,48 +209,53 @@ impl Platform for KbotPlatform {
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
                                 max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             13,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             14,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             15,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(60.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
-                        (
-                            16,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride00,
-                                max_angle_change: Some(50.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
-                            },
-                        ),
+                        // (
+                        //     16,
+                        //     ActuatorConfiguration {
+                        //         actuator_type: ActuatorType::RobStride00,
+                        //         max_angle_change: Some(15.0f32.to_radians()),
+                        //         max_velocity: Some(10.0f32.to_radians()),
+                        //     },
+                        // ),
                         // Right Arm
                         (
                             21,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
                                 max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
@@ -184,80 +263,89 @@ impl Platform for KbotPlatform {
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
                                 max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             23,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             24,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             25,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(60.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
-                        (
-                            26,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride00,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
-                            },
-                        ),
+                        // (
+                        //     26,
+                        //     ActuatorConfiguration {
+                        //         actuator_type: ActuatorType::RobStride00,
+                        //         max_angle_change: Some(15.0f32.to_radians()),
+                        //         max_velocity: Some(10.0f32.to_radians()),
+                        //     },
+                        // ),
                         // Left Leg
                         (
                             31,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 30.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             32,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             33,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             34,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             35,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         // Right Leg
@@ -265,40 +353,45 @@ impl Platform for KbotPlatform {
                             41,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 30.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             42,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             43,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             44,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                         (
                             45,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(10.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                max_velocity: Some(max_vel),
+                                command_rate_hz: Some(100.0),
                             },
                         ),
                     ],
@@ -307,10 +400,12 @@ impl Platform for KbotPlatform {
                 .wrap_err("Failed to create actuator")?;
 
                 // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
-                //    .wrap_err("Failed to create IMU")?;
+                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB1", 9600)
+                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
+                    .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
-                    // ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),
@@ -329,7 +424,8 @@ impl Platform for KbotPlatform {
                         robstride::ActuatorConfiguration {
                             actuator_type: ActuatorType::RobStride04,
                             max_angle_change: Some(2.0f32.to_radians()),
-                            max_velocity: Some(10.0f32.to_radians()),
+                            max_velocity: Some(720.0f32.to_radians()),
+                            command_rate_hz: Some(100.0),
                         },
                     )],
                 )
@@ -344,7 +440,14 @@ impl Platform for KbotPlatform {
     }
 
     fn shutdown(&mut self) -> eyre::Result<()> {
-        // Shutdown and cleanup code goes here
+        // Signal powerboard monitoring to stop
+        if let Some(shutdown) = SHUTDOWN_SIGNAL.get().and_then(|lock| lock.lock().take()) {
+            tracing::info!("Sending shutdown signal to power board monitoring");
+            let _ = shutdown.send(true);
+        }
         Ok(())
     }
 }
+
+static SHUTDOWN_SIGNAL: OnceCell<parking_lot::Mutex<Option<tokio::sync::watch::Sender<bool>>>> =
+    OnceCell::new();

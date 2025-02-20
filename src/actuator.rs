@@ -121,9 +121,9 @@ impl Actuator for KBotActuator {
         let control_config = ControlConfig {
             kp: config.kp.unwrap_or(0.0) as f32,
             kd: config.kd.unwrap_or(0.0) as f32,
-            max_torque: Some(config.max_torque.unwrap_or(2.0) as f32),
-            max_velocity: Some(5.0),
-            max_current: Some(10.0),
+            max_torque: Some(config.max_torque.unwrap_or(120.0) as f32),
+            max_velocity: Some(1000.0),
+            max_current: Some(1000.0),
         };
 
         let mut supervisor = self.supervisor.lock().await;
@@ -170,6 +170,26 @@ impl Actuator for KBotActuator {
         for id in actuator_ids {
             let supervisor = self.supervisor.lock().await;
             if let Ok(Some((feedback, ts))) = supervisor.get_feedback(id as u8).await {
+                // TODO: Move this logic to someplace synchronous to avoid slowdowns?
+                let mut faults = vec![];
+                if feedback.fault_uncalibrated {
+                    faults.push("Uncalibrated".to_string());
+                }
+                if feedback.fault_hall_encoding {
+                    faults.push("Hall encoding".to_string());
+                }
+                if feedback.fault_magnetic_encoding {
+                    faults.push("Magnetic encoding".to_string());
+                }
+                if feedback.fault_over_temperature {
+                    faults.push("Over temperature".to_string());
+                }
+                if feedback.fault_overcurrent {
+                    faults.push("Over current".to_string());
+                }
+                if feedback.fault_undervoltage {
+                    faults.push("Under voltage".to_string());
+                }
                 responses.push(ActuatorStateResponse {
                     actuator_id: id,
                     online: ts.elapsed().unwrap_or(Duration::from_secs(1)) < Duration::from_secs(1),
@@ -179,6 +199,7 @@ impl Actuator for KBotActuator {
                     temperature: Some(feedback.temperature as f64),
                     voltage: None,
                     current: None,
+                    faults,
                 });
             }
         }

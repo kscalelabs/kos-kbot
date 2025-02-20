@@ -3,3 +3,8 @@
 # Rust
 Cargo.lock
 target/
+
+# Local crates
+local_crates/
+
+logs/

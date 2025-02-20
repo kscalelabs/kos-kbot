@@ -1,4 +1,7 @@
-"""Real robot walking deployment script using PyKOS interface."""
+"""
+Real robot walking deployment script using PyKOS interface.
+Uses policies trained with the old k-bot urdf (head + shells)
+"""
 
 import argparse
 import asyncio
@@ -21,58 +24,51 @@ upper_arm_ids = [11, 12, 13, 14, 15, 21, 22, 23, 24, 25]
 
 # Ordered joint names for policy (legs only, top-down, left-right order)
 JOINT_NAME_LIST = [
-    "left_hip_pitch_04",    # Left leg, top to bottom
-    "left_hip_roll_03",
-    "left_hip_yaw_03", 
-    "left_knee_04",
-    "left_ankle_02",
-    "right_hip_pitch_04",    # Right leg, top to bottom
-    "right_hip_roll_03",
-    "right_hip_yaw_03",
-    "right_knee_04",
-    "right_ankle_02"
+    "L_hip_y",    # Left leg, top to bottom
+    "L_hip_x",
+    "L_hip_z", 
+    "L_knee",
+    "L_ankle",
+    "R_hip_y",    # Right leg, top to bottom
+    "R_hip_x",
+    "R_hip_z",
+    "R_knee",
+    "R_ankle"
 ]
 
 # Joint mapping for KOS
 JOINT_NAME_TO_ID = {
     # Left leg
-    "left_hip_pitch_04": 31,
-    "left_hip_roll_03": 32,
-    "left_hip_yaw_03": 33,
-    "left_knee_04": 34,
-    "left_ankle_02": 35,
+    "L_hip_y": 31,
+    "L_hip_x": 32,
+    "L_hip_z": 33,
+    "L_knee": 34,
+    "L_ankle": 35,
     # Right leg
-    "right_hip_pitch_04": 41,
-    "right_hip_roll_03": 42,
-    "right_hip_yaw_03": 43,
-    "right_knee_04": 44,
-    "right_ankle_02": 45
+    "R_hip_y": 41,
+    "R_hip_x": 42,
+    "R_hip_z": 43,
+    "R_knee": 44,
+    "R_ankle": 45
 }
 
 # Joint signs for correct motion direction
 JOINT_SIGNS = {
     # Left leg
-    "left_hip_pitch_04": 1,
-    "left_hip_roll_03": 1,
-    "left_hip_yaw_03": 1,
-    "left_knee_04": 1,
-    "left_ankle_02": 1,
+    "L_hip_y": 1,
+    "L_hip_x": 1,
+    "L_hip_z": 1,
+    "L_knee": -1,
+    "L_ankle": 1,
     # Right leg
-    "right_hip_pitch_04": 1,
-    "right_hip_roll_03": 1,
-    "right_hip_yaw_03": 1,
-    "right_knee_04": 1,
-    "right_ankle_02": -1
-}
-
-MOTOR_TYPE_TO_METADATA_INDEX = {
-    "04": 0,
-    "03": 1,
-    "02": 2,
+    "R_hip_y": 1,
+    "R_hip_x": 1,
+    "R_hip_z": 1,
+    "R_knee": 1,
+    "R_ankle": -1
 }
 
 ORN_OFFSET = [-1.1590576171875, -1.4337158203125, 55.6732177734375]
-
 
 def handle_keyboard_input() -> None:
     """Handle keyboard input for velocity commands."""
@@ -112,17 +108,16 @@ class RobotState:
 
         # Store IMU offset
         imu_data = await kos.imu.get_euler_angles()
-        initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
-        self.orn_offset = R.from_quat(initial_quat).inv()
-        # self.orn_offset = R.from_euler('xyz', [ORN_OFFSET[0], ORN_OFFSET[1], ORN_OFFSET[2]], degrees=True).inv()
-
-    async def get_obs(self, kos: KOS) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        # initial_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
+        # self.orn_offset = R.from_quat(initial_quat).inv()
+        # HACK: Use identified pitch and roll offsets to avoid error on startup
+        self.orn_offset = R.from_euler('xyz', [ORN_OFFSET[0], ORN_OFFSET[1], imu_data.yaw], degrees=True).inv()
+    async def get_obs(self, kos: KOS) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Get robot state with offset compensation."""
         # Batch state requests
-        states, euler_data, imu_sensor_data = await asyncio.gather(
+        states, imu_data = await asyncio.gather(
             kos.actuator.get_actuators_state([JOINT_NAME_TO_ID[name] for name in JOINT_NAME_LIST]),
-            kos.imu.get_euler_angles(),
-            kos.imu.get_imu_values(),
+            kos.imu.get_euler_angles()
         )
         
         # Apply offsets and signs to positions and convert to radians
@@ -138,7 +133,7 @@ class RobotState:
         ], dtype=np.float32)
 
         # Process IMU data with offset compensation
-        current_quat = R.from_euler('xyz', [euler_data.roll, euler_data.pitch, euler_data.yaw], degrees=True).as_quat()
+        current_quat = R.from_euler('xyz', [imu_data.roll, imu_data.pitch, imu_data.yaw], degrees=True).as_quat()
         if self.orn_offset is not None:
             # Apply the offset by quaternion multiplication
             current_rot = R.from_quat(current_quat)
@@ -149,12 +144,8 @@ class RobotState:
         # Calculate gravity vector with offset compensation
         r = R.from_quat(quat)
         gvec = r.apply(np.array([0.0, 0.0, -1.0]), inverse=True)
-        gyro_x = imu_sensor_data.gyro_x or 0.0
-        gyro_y = imu_sensor_data.gyro_y or 0.0
-        gyro_z = imu_sensor_data.gyro_z or 0.0
-        omega = np.deg2rad(np.array([-gyro_x, -gyro_y, gyro_z])) # TODO: Check if this is correct
 
-        return q, dq, quat, gvec, omega
+        return q, dq, quat, gvec
 
     def apply_command(self, position: float, joint_name: str) -> float:
         """Apply sign first, then offset to outgoing command. Convert from radians to degrees."""
@@ -191,8 +182,7 @@ async def run_robot(
             *[f'q_{i}' for i in range(10)],  # joint positions
             *[f'dq_{i}' for i in range(10)],  # joint velocities
             *['quat_w', 'quat_x', 'quat_y', 'quat_z'],  # quaternion
-            *['gvec_x', 'gvec_y', 'gvec_z'],  # gravity vector
-            *['omega_x', 'omega_y', 'omega_z'],  # gyro
+            *['gvec_x', 'gvec_y', 'gvec_z']  # gravity vector
         ])
         
         outputs_writer.writerow([
@@ -227,15 +217,23 @@ async def run_robot(
         print("Capturing current position as zero...")
         await robot_state.offset_in_place(kos, JOINT_NAME_LIST)
 
-        efforts = model_info["robot_effort"]
-        # Take the motor name (e.g. 04, 03, 02) and get the effort from the efforts list
-        # Which is ordered as [04_limit, 03_limit, 02_limit]
-        tau_limit = np.array([efforts[MOTOR_TYPE_TO_METADATA_INDEX[name[-2:]]] for name in JOINT_NAME_LIST]) * model_info["tau_factor"]
+        # Get arm positions and hold them
+        # arm_states = await kos.actuator.get_actuators_state(ARM_IDS)
+        # arm_positions = {arm_states.states[i].position for i in range(len(ARM_IDS))}
 
-        p_gains = model_info["robot_stiffness"]
-        kps = np.array([p_gains[MOTOR_TYPE_TO_METADATA_INDEX[name[-2:]]] for name in JOINT_NAME_LIST])
-        d_gains = model_info["robot_damping"]
-        kds = np.array([d_gains[MOTOR_TYPE_TO_METADATA_INDEX[name[-2:]]] for name in JOINT_NAME_LIST])
+        # arm_commands = []
+        # for i, arm_id in enumerate(ARM_IDS):
+        #     arm_commands.append({"actuator_id": arm_id, "position": arm_positions[i]})
+        # await kos.actuator.command_actuators(arm_commands)
+
+        # # Configure arms
+        # for arm_id in ARM_IDS:
+        #     await kos.actuator.configure_actuator(actuator_id=arm_id, kp=20, kd=1, torque_enabled=True)
+
+        tau_limit = np.array(list(model_info["robot_effort"]) + list(model_info["robot_effort"])) * model_info["tau_factor"]
+        kps = np.array(list(model_info["robot_stiffness"]) + list(model_info["robot_stiffness"]))
+        kds = np.array(list(model_info["robot_damping"]) + list(model_info["robot_damping"]))
+
         # Configure gains for each joint
         for i, joint_name in enumerate(JOINT_NAME_LIST):
             joint_id = JOINT_NAME_TO_ID[joint_name]
@@ -247,6 +245,7 @@ async def run_robot(
                 max_torque=float(tau_limit[i]),
                 torque_enabled=True
             )
+
         # Initialize policy state
         default = np.array(model_info["default_standing"])
         target_q = np.zeros(model_info["num_actions"], dtype=np.float32)
@@ -254,34 +253,7 @@ async def run_robot(
         hist_obs = np.zeros(model_info["num_observations"], dtype=np.float32)
         count_policy = 0
 
-        # print(f"Going to zero position...")
-        # await kos.actuator.command_actuators([{"actuator_id": joint_id, "position": 0.0} for joint_id in leg_ids])
-
         print(f"Going to default position...")
-        current_commands = [0.0] * len(JOINT_NAME_LIST)
-        target_commands = [float(default[i]) for i in range(len(JOINT_NAME_LIST))]
-        
-        # Keep moving until all joints are within 0.1 degrees of their targets
-        while any(abs(current - target) > 0.1 for current, target in zip(current_commands, target_commands)):
-            # Update commands with 0.5 degree steps towards target
-            for i in range(len(current_commands)):
-                if current_commands[i] < target_commands[i]:
-                    current_commands[i] = min(current_commands[i] + 0.1, target_commands[i])
-                elif current_commands[i] > target_commands[i]:
-                    current_commands[i] = max(current_commands[i] - 0.1, target_commands[i])
-            
-            # Send commands to motors
-            default_commands = []
-            for i, joint_name in enumerate(JOINT_NAME_LIST):
-                joint_id = JOINT_NAME_TO_ID[joint_name]
-                position = robot_state.apply_command(current_commands[i], joint_name)
-                default_commands.append({"actuator_id": joint_id, "position": position})
-            await kos.actuator.command_actuators(default_commands)
-            
-            # Small delay to allow motors to move
-            await asyncio.sleep(0.1)
-
-        # Finally, command default position
         default_commands = []
         for i, joint_name in enumerate(JOINT_NAME_LIST):
             joint_id = JOINT_NAME_TO_ID[joint_name]
@@ -301,7 +273,7 @@ async def run_robot(
 
                 try:
                     # Get robot state with offset compensation
-                    q, dq, quat, gvec, omega = await robot_state.get_obs(kos)
+                    q, dq, quat, gvec = await robot_state.get_obs(kos)
 
                     # Log inputs
                     inputs_writer.writerow([
@@ -310,8 +282,7 @@ async def run_robot(
                         *q,  # joint positions
                         *dq,  # joint velocities
                         *quat,  # quaternion
-                        *gvec,  # gravity vector
-                        *omega,  # gyro
+                        *gvec  # gravity vector
                     ])
                     inputs_file.flush()  # Ensure data is written immediately
 
@@ -325,13 +296,12 @@ async def run_robot(
                         "dof_vel.1": dq.astype(np.float32),
                         "prev_actions.1": prev_actions.astype(np.float32),
                         "projected_gravity.1": gvec.astype(np.float32),
-                        "imu_ang_vel.1": omega.astype(np.float32),
                         "buffer.1": hist_obs.astype(np.float32),
                     }
 
                     # Run policy
                     policy_output = policy(input_data)
-                    target_q = policy_output["actions_scaled"] * 1.0
+                    target_q = policy_output["actions_scaled"]
                     prev_actions = policy_output["actions"]
                     hist_obs = policy_output["x.3"]
 
@@ -412,7 +382,7 @@ async def main():
             pygame.init()
             pygame.display.set_caption("Robot Control")
         else:
-            x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.2, 0.0, 0.0
+            x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.0, 0.0, 0.0
 
         # Run robot control
         await run_robot(

@@ -41,10 +41,12 @@ jobs:
         uses: actions/cache@v3
         id: protoc-cache
         with:
-          path: /usr/local/bin/protoc
-          key: ${{ runner.os }}-protoc-29.3-v1
+          path: |
+            /usr/local/bin/protoc
+            /usr/local/include/google
+          key: ${{ runner.os }}-protoc-29.3-v2
 
-      - name: Install Protoc
+      - name: Install Protoc and Google APIs
         if: steps.protoc-cache.outputs.cache-hit != 'true'
         run: |
           PROTOC_VERSION="29.3"
@@ -53,6 +55,12 @@ jobs:
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
           rm -f ${PROTOC_ZIP}
+
+          # Download and install Google APIs
+          git clone https://github.com/googleapis/googleapis.git
+          sudo cp -r googleapis/google /usr/local/include/
+          rm -rf googleapis
+          
           protoc --version
 
       - name: Set up Rust

@@ -14,18 +14,27 @@ repository = "https://github.com/kscalelabs/kos-kbot"
 description = "KOS platform for KBot"
 
 [dependencies]
-kos = "0.5"
-kbot-pwrbrd = "0.1.1"
+# kos = {path="../kos/kos"}
+kos = "0.7.4"
+kbot-pwrbrd = "0.2.2"
 eyre = "0.6"
 krec = "0.2"
 tracing = "0.1"
 async-trait = "0.1"
-robstride = "0.3"
+robstride = "0.3.2"
+# robstride = {version = "0.3.2", path="./local_crates/actuator/actuator/robstride"}
 gstreamer = "0.20"
 gstreamer-app = "0.20"
+serde_json = "1.0"
 gstreamer-video = "0.20"
 uuid = { version = "1", features = ["v4"] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["full", "tracing"] }
+tracing-subscriber = "0.3"
+# console-subscriber = "0.4"
 [target.'cfg(target_os = "linux")'.dependencies]
-imu = ">=0.2.2"
+imu = ">=0.2.3"
+# hiwonder = "0.2.1"
+# hiwonder = {version="0.2.3", path="./local_crates/imu/imu/hiwonder"}
 chrono = "0.4"
+once_cell = "1.2"
+parking_lot = "0.12"
