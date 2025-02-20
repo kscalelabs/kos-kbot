@@ -23,18 +23,18 @@ use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
 use kos::{
     services::{
-        ActuatorServiceImpl, IMUServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl,
+        ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl, IMUServiceImpl
     },
     telemetry::Telemetry,
     Platform, ServiceEnum,
 };
 use once_cell::sync::OnceCell;
-use parking_lot;
-use serde_json;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
+
+const USE_POWERBOARD: bool = true;
 
 pub struct KbotPlatform {}
 
@@ -160,7 +160,9 @@ impl Platform for KbotPlatform {
 
     fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
         // Initialize the platform
-        // self.initialize_powerboard()?;
+        if USE_POWERBOARD {
+            self.initialize_powerboard()?;
+        }
         Ok(())
     }
 
@@ -403,7 +405,7 @@ impl Platform for KbotPlatform {
                     .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
-                    // ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),
