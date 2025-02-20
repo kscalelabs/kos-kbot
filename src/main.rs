@@ -1,8 +1,8 @@
 use kos::daemon::kos_runtime;
 use kos_kbot::KbotPlatform;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::fmt::writer::MakeWriterExt;
 use std::fs::File;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
+use tracing_subscriber::prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

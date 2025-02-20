@@ -28,13 +28,13 @@ use kos::{
     telemetry::Telemetry,
     Platform, ServiceEnum,
 };
+use once_cell::sync::OnceCell;
+use parking_lot;
+use serde_json;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use serde_json;
-use once_cell::sync::OnceCell;
-use parking_lot;
 
 pub struct KbotPlatform {}
 
@@ -48,18 +48,20 @@ impl KbotPlatform {
             .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
         tracing::info!("Initializing power board monitoring on can0");
-        board.configure_board().map_err(|e| eyre!("Failed to configure power board: {}", e))?;
+        board
+            .configure_board()
+            .map_err(|e| eyre!("Failed to configure power board: {}", e))?;
 
         // Create a shutdown channel
         let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-        
+
         // Store sender in a static or global location for shutdown
         SHUTDOWN_SIGNAL.get_or_init(|| parking_lot::Mutex::new(Some(shutdown_tx)));
 
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create runtime for power board monitoring");
-            
+
             rt.block_on(async {
                 let mut counter = 0u64;
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
@@ -72,9 +74,9 @@ impl KbotPlatform {
 
                             if let Ok(Some(frame)) = board.read_frame() {
                                 let telemetry = Telemetry::get().await;
-                                
+
                                 match frame {
-                                    PowerBoardFrame::General(status) => {                                        
+                                    PowerBoardFrame::General(status) => {
                                         if let Some(telemetry) = &telemetry {
                                             let data = serde_json::json!({
                                                 "counter": counter,
@@ -93,7 +95,7 @@ impl KbotPlatform {
                                         );
                                     }
                                     PowerBoardFrame::Limbs(status) => {
-                                        
+
                                         if let Some(telemetry) = &telemetry {
                                             let data = serde_json::json!({
                                                 "counter": counter,
@@ -303,7 +305,7 @@ impl Platform for KbotPlatform {
                             31,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0*30.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 30.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -312,7 +314,7 @@ impl Platform for KbotPlatform {
                             32,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0*45.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -321,7 +323,7 @@ impl Platform for KbotPlatform {
                             33,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0*90.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -330,7 +332,7 @@ impl Platform for KbotPlatform {
                             34,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0*45.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -339,7 +341,7 @@ impl Platform for KbotPlatform {
                             35,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(2.0*90.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -349,7 +351,7 @@ impl Platform for KbotPlatform {
                             41,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0*30.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 30.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -358,7 +360,7 @@ impl Platform for KbotPlatform {
                             42,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0*45.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -367,7 +369,7 @@ impl Platform for KbotPlatform {
                             43,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0*90.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -376,7 +378,7 @@ impl Platform for KbotPlatform {
                             44,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0*45.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -385,7 +387,7 @@ impl Platform for KbotPlatform {
                             45,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(2.0*90.0f32.to_radians()),
+                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -445,4 +447,5 @@ impl Platform for KbotPlatform {
     }
 }
 
-static SHUTDOWN_SIGNAL: OnceCell<parking_lot::Mutex<Option<tokio::sync::watch::Sender<bool>>>> = OnceCell::new();
+static SHUTDOWN_SIGNAL: OnceCell<parking_lot::Mutex<Option<tokio::sync::watch::Sender<bool>>>> =
+    OnceCell::new();
