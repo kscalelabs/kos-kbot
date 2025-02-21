@@ -192,7 +192,7 @@ impl Platform for KbotPlatform {
                     ],
                     Duration::from_secs(1),
                     // Duration::from_nanos(3_333_333),
-                    Duration::from_millis(7),
+                    Duration::from_millis(2),
                     &[
                         // Left Arm
                         (
