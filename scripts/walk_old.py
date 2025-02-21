@@ -265,9 +265,11 @@ async def run_robot(
             print(f"Starting in {i} seconds...")
             await asyncio.sleep(1)
 
+        start_time = time.time()
+        next_time = start_time + model_info["policy_dt"]
+
         try:
             while True:
-                process_start = time.time()
                 if keyboard_use:
                     handle_keyboard_input()
 
@@ -317,15 +319,9 @@ async def run_robot(
                         commands.append({"actuator_id": joint_id, "position": position})
                     await kos.actuator.command_actuators(commands)
 
-                    process_time = time.time() - process_start
-                    process_times.append(process_time)
-                    
-                    sleep = model_info["policy_dt"] - process_time
-                    if sleep > 0:
-                        await asyncio.sleep(sleep)
-                    # else:
-                    #     print(f"Policy took {process_time:.4f} seconds")
-
+                    process_times.append(next_time - time.time())
+                    await asyncio.sleep(max(0, next_time - time.time()))
+                    next_time += model_info["policy_dt"]
                     count_policy += 1
 
                 except asyncio.CancelledError:
