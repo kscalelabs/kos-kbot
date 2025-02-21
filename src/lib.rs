@@ -23,7 +23,7 @@ use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
 use kos::{
     services::{
-        ActuatorServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl, IMUServiceImpl
+        ActuatorServiceImpl, IMUServiceImpl, OperationsServiceImpl, ProcessManagerServiceImpl,
     },
     telemetry::Telemetry,
     Platform, ServiceEnum,
