@@ -34,7 +34,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USE_POWERBOARD: bool = true;
+const USE_POWERBOARD: bool = false;
 
 pub struct KbotPlatform {}
 
