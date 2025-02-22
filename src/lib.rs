@@ -1,11 +1,16 @@
-mod actuator;
+mod inspirehand;
 mod process_manager;
-
+mod rh56actuator;
+mod rsactuator;
+mod proxyactuator;
 #[cfg(target_os = "linux")]
 // mod hexmove;
 mod hiwonder;
 
-pub use actuator::*;
+pub use inspirehand::*;
+pub use rh56actuator::*;
+pub use rsactuator::*;
+pub use proxyactuator::*;
 pub use robstride::{ActuatorConfiguration, ActuatorType};
 
 #[cfg(target_os = "linux")]
@@ -44,7 +49,7 @@ impl KbotPlatform {
     }
 
     fn initialize_powerboard(&self) -> eyre::Result<()> {
-        let board = PowerBoard::new("can0")
+        let board = PowerBoard::new("can2")
             .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
         tracing::info!("Initializing power board monitoring on can0");
@@ -180,7 +185,7 @@ impl Platform for KbotPlatform {
 
                 let max_vel = 7200.0f32.to_radians();
 
-                let actuator = KBotActuator::new(
+                let rs_actuator = RSActuator::new(
                     operations_service.clone(),
                     vec![
                         // "/dev/ttyCH341USB0",
@@ -188,7 +193,7 @@ impl Platform for KbotPlatform {
                         // "/dev/ttyCH341USB2",
                         // "/dev/ttyCH341USB3",
                         // "can0",
-                        "can1", "can2", "can3", "can4",
+                        "can1", "can0", "can3", "can4",
                     ],
                     Duration::from_secs(1),
                     // Duration::from_nanos(3_333_333),
@@ -399,6 +404,29 @@ impl Platform for KbotPlatform {
                 .await
                 .wrap_err("Failed to create actuator")?;
 
+                let left_hand = RH56Actuator::new(
+                    operations_service.clone(),
+                    "/dev/ttyUSB2",
+                    1,
+                    51,
+                )
+                .await
+                .wrap_err("Failed to create left hand")?;
+
+                let right_hand = RH56Actuator::new(
+                    operations_service.clone(),
+                    "/dev/ttyUSB1",
+                    1,
+                    61,
+                )
+                .await
+                .wrap_err("Failed to create right hand")?;
+
+                let actuator = ProxyActuator::new(vec![
+                    (Box::new(rs_actuator), 1..=49),
+                    (Box::new(left_hand), 51..=56),
+                    (Box::new(right_hand), 61..=66),
+                ]);
                 // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
                 // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB1", 9600)
                 let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
@@ -414,27 +442,27 @@ impl Platform for KbotPlatform {
                     )),
                 ])
             } else {
-                let actuator = KBotActuator::new(
-                    operations_service,
-                    vec!["can0"],
-                    Duration::from_secs(1),
-                    Duration::from_nanos(3_333_333),
-                    &[(
-                        1,
-                        robstride::ActuatorConfiguration {
-                            actuator_type: ActuatorType::RobStride04,
-                            max_angle_change: Some(2.0f32.to_radians()),
-                            max_velocity: Some(720.0f32.to_radians()),
-                            command_rate_hz: Some(100.0),
-                        },
-                    )],
-                )
-                .await
-                .wrap_err("Failed to create actuator")?;
+                unimplemented!("ouch");
+                //     operations_service,
+                //     vec!["can0"],
+                //     Duration::from_secs(1),
+                //     Duration::from_nanos(3_333_333),
+                //     &[(
+                //         1,
+                //         robstride::ActuatorConfiguration {
+                //             actuator_type: ActuatorType::RobStride04,
+                //             max_angle_change: Some(2.0f32.to_radians()),
+                //             max_velocity: Some(720.0f32.to_radians()),
+                //             command_rate_hz: Some(100.0),
+                //         },
+                //     )],
+                // )
+                // .await
+                // .wrap_err("Failed to create actuator")?;
 
-                Ok(vec![ServiceEnum::Actuator(ActuatorServiceServer::new(
-                    ActuatorServiceImpl::new(Arc::new(actuator)),
-                ))])
+                // Ok(vec![ServiceEnum::Actuator(ActuatorServiceServer::new(
+                //     ActuatorServiceImpl::new(Arc::new(actuator)),
+                // ))])
             }
         })
     }
