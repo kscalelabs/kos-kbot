@@ -43,43 +43,41 @@ impl KBotProcessManager {
         // Create elements
         let src = gst::ElementFactory::make("v4l2src")
             .name("src")
-            .property("device", "/dev/video0")
+            .property("device", "/dev/video47")
+            .property_from_str("io-mode", "2")  // Force memory mapping mode
             .build()
             .wrap_err("Failed to create v4l2src")?;
+
+        let src_caps = gst::ElementFactory::make("capsfilter")
+            .name("src_caps")
+            .property(
+                "caps",
+                gst::Caps::builder("video/x-raw")
+                    .field("format", "YUY2")
+                    .field("width", 1280i32)
+                    .field("height", 1080i32)
+                    .field("framerate", gst::Fraction::new(30, 1))
+                    .build(),
+            )
+            .build()
+            .wrap_err("Failed to create source capsfilter")?;
 
         let videoscale = gst::ElementFactory::make("videoscale")
             .name("videoscale0")
             .build()
             .wrap_err("Failed to create videoscale")?;
 
-        let capsfilter = gst::ElementFactory::make("capsfilter")
-            .name("capsfilter0")
+        let scale_caps = gst::ElementFactory::make("capsfilter")
+            .name("scale_caps")
             .property(
                 "caps",
                 gst::Caps::builder("video/x-raw")
-                    .field("width", 640i32)
-                    .field("height", 480i32)
+                    .field("width", 512i32)
+                    .field("height", 512i32)
                     .build(),
             )
             .build()
-            .wrap_err("Failed to create capsfilter")?;
-
-        let nvvidconv = gst::ElementFactory::make("nvvidconv")
-            .name("nvvidconv0")
-            .build()
-            .wrap_err("Failed to create nvvidconv")?;
-
-        let nvvidconv_caps = gst::ElementFactory::make("capsfilter")
-            .name("nvvidconv_caps")
-            .property(
-                "caps",
-                gst::Caps::builder("video/x-raw")
-                    .features(["memory:NVMM"])
-                    .field("format", "NV12")
-                    .build(),
-            )
-            .build()
-            .wrap_err("Failed to create nvvidconv capsfilter")?;
+            .wrap_err("Failed to create scale capsfilter")?;
 
         let tee = gst::ElementFactory::make("tee")
             .name("tee0")
@@ -96,12 +94,21 @@ impl KBotProcessManager {
             .build()
             .wrap_err("Failed to create record queue")?;
 
+        let videoconvert_monitor = gst::ElementFactory::make("videoconvert")
+            .name("videoconvert_monitor")
+            .build()
+            .wrap_err("Failed to create monitor videoconvert")?;
+
+        let videoconvert_record = gst::ElementFactory::make("videoconvert")
+            .name("videoconvert_record")
+            .build()
+            .wrap_err("Failed to create record videoconvert")?;
+
         let appsink = gst_app::AppSink::builder()
             .name("appsink0")
             .caps(
                 &gst::Caps::builder("video/x-raw")
-                    .features(["memory:NVMM"])
-                    .field("format", "NV12")
+                    .field("format", "RGB")
                     .build(),
             )
             .build();
@@ -126,8 +133,10 @@ impl KBotProcessManager {
                 .build(),
         );
 
-        let encoder = gst::ElementFactory::make("nvv4l2h265enc")
-            .name("nvv4l2h265enc0")
+        let encoder = gst::ElementFactory::make("x265enc")
+            .name("x265enc0")
+            .property_from_str("tune", "zerolatency")
+            .property_from_str("speed-preset", "ultrafast")  // Faster encoding
             .build()
             .wrap_err("Failed to create H265 encoder")?;
 
@@ -136,7 +145,9 @@ impl KBotProcessManager {
             .build()
             .wrap_err("Failed to create H265 parser")?;
 
-        let muxer = gst::ElementFactory::make("qtmux").name("qtmux0").build()?;
+        let muxer = gst::ElementFactory::make("qtmux")
+            .name("qtmux0")
+            .build()?;
 
         let sink = gst::ElementFactory::make("filesink")
             .name("filesink0")
@@ -153,13 +164,14 @@ impl KBotProcessManager {
         pipeline
             .add_many(&[
                 &src,
+                &src_caps,
                 &videoscale,
-                &capsfilter,
-                &nvvidconv,
-                &nvvidconv_caps,
+                &scale_caps,
                 &tee,
                 &queue_monitor,
+                &videoconvert_monitor,
                 &queue_record,
+                &videoconvert_record,
                 appsink.upcast_ref(),
                 &encoder,
                 &parser,
@@ -171,22 +183,32 @@ impl KBotProcessManager {
         // Link elements up to tee
         gst::Element::link_many(&[
             &src,
+            &src_caps,
             &videoscale,
-            &capsfilter,
-            &nvvidconv,
-            &nvvidconv_caps,
+            &scale_caps,
             &tee,
         ])?;
 
         // Link monitoring branch
-        gst::Element::link_many(&[&queue_monitor, appsink.upcast_ref()])?;
+        gst::Element::link_many(&[
+            &queue_monitor,
+            &videoconvert_monitor,
+            appsink.upcast_ref(),
+        ])?;
 
         // Link recording branch
-        gst::Element::link_many(&[&queue_record, &encoder, &parser, &muxer, &sink])?;
+        gst::Element::link_many(&[
+            &queue_record,
+            &videoconvert_record,
+            &encoder,
+            &parser,
+            &muxer,
+            &sink,
+        ])?;
 
-        // Link tee to both queues using proper pad names
-        tee.link_pads(Some("src_%u"), &queue_monitor, None)?;
-        tee.link_pads(Some("src_%u"), &queue_record, None)?;
+        // Link tee to both queues
+        tee.link_pads(Some("src_0"), &queue_monitor, None)?;
+        tee.link_pads(Some("src_1"), &queue_record, None)?;
 
         Ok((pipeline, appsink.upcast()))
     }
@@ -314,10 +336,9 @@ impl ProcessManager for KBotProcessManager {
             // Send EOS event
             pipeline.send_event(gst::event::Eos::new());
 
-            // Wait for EOS or Error message with timeout
-            let timeout = gst::ClockTime::from_seconds(5);
-            let msg =
-                bus.timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error]);
+            // Wait for EOS or Error message with a shorter timeout
+            let timeout = gst::ClockTime::from_seconds(2);
+            let msg = bus.timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error]);
 
             match msg {
                 Some(msg) => {
@@ -327,17 +348,7 @@ impl ProcessManager for KBotProcessManager {
                             tracing::info!("Pipeline received EOS");
                         }
                         MessageView::Error(err) => {
-                            return Ok(KClipStopResponse {
-                                clip_uuid: None,
-                                error: Some(Error {
-                                    code: ErrorCode::Unknown as i32,
-                                    message: format!(
-                                        "Pipeline error: {} ({})",
-                                        err.error(),
-                                        err.debug().unwrap_or_default()
-                                    ),
-                                }),
-                            });
+                            tracing::error!("Pipeline error: {} ({})", err.error(), err.debug().unwrap_or_default());
                         }
                         _ => unreachable!(),
                     }
@@ -347,20 +358,8 @@ impl ProcessManager for KBotProcessManager {
                 }
             }
 
-            // Change state to NULL
-            let state_change = pipeline
-                .set_state(gst::State::Null)
-                .map_err(|e| eyre!("Failed to set pipeline state to Null: {}", e))?;
-
-            if !matches!(state_change, gst::StateChangeSuccess::Success) {
-                return Ok(KClipStopResponse {
-                    clip_uuid: None,
-                    error: Some(Error {
-                        code: ErrorCode::Unknown as i32,
-                        message: "Failed to change pipeline state to Null".to_string(),
-                    }),
-                });
-            }
+            // Force state change to NULL immediately
+            pipeline.set_state(gst::State::Null)?;
 
             // Clear the pipeline
             *pipeline_guard = None;

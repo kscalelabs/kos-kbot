@@ -178,20 +178,27 @@ impl Platform for KbotPlatform {
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
-                let max_vel = 7200.0f32.to_radians();
+                let mut services = Vec::new();
 
-                let actuator = KBotActuator::new(
+                // Initialize IMU
+                match KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600) {
+                    Ok(imu) => {
+                        tracing::info!("Successfully initialized IMU");
+                        services.push(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(
+                            Arc::new(imu),
+                        ))));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize IMU: {}", e);
+                    }
+                }
+
+                // Initialize Actuator
+                let max_vel = 7200.0f32.to_radians();
+                match KBotActuator::new(
                     operations_service.clone(),
-                    vec![
-                        // "/dev/ttyCH341USB0",
-                        // "/dev/ttyCH341USB1",
-                        // "/dev/ttyCH341USB2",
-                        // "/dev/ttyCH341USB3",
-                        // "can0",
-                        "can1", "can2", "can3", "can4",
-                    ],
+                    vec!["can1", "can2", "can3", "can4"],
                     Duration::from_secs(1),
-                    // Duration::from_nanos(3_333_333),
                     Duration::from_millis(2),
                     &[
                         // Left Arm
@@ -397,24 +404,31 @@ impl Platform for KbotPlatform {
                     ],
                 )
                 .await
-                .wrap_err("Failed to create actuator")?;
+                {
+                    Ok(actuator) => {
+                        tracing::info!("Successfully initialized Actuator");
+                        services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(
+                            ActuatorServiceImpl::new(Arc::new(actuator)),
+                        )));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize Actuator: {}", e);
+                    }
+                }
 
-                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
-                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB1", 9600)
-                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
-                    .wrap_err("Failed to create IMU")?;
-
-                Ok(vec![
-                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
-                    ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
-                        Arc::new(actuator),
+                // Add process manager service
+                services.push(ServiceEnum::ProcessManager(
+                    ProcessManagerServiceServer::new(ProcessManagerServiceImpl::new(Arc::new(
+                        process_manager,
                     ))),
-                    ServiceEnum::ProcessManager(ProcessManagerServiceServer::new(
-                        ProcessManagerServiceImpl::new(Arc::new(process_manager)),
-                    )),
-                ])
+                ));
+
+                Ok(services)
             } else {
-                let actuator = KBotActuator::new(
+                let mut services = Vec::new();
+
+                // Initialize Actuator for non-Linux platforms
+                match KBotActuator::new(
                     operations_service,
                     vec!["can0"],
                     Duration::from_secs(1),
@@ -430,11 +444,19 @@ impl Platform for KbotPlatform {
                     )],
                 )
                 .await
-                .wrap_err("Failed to create actuator")?;
+                {
+                    Ok(actuator) => {
+                        tracing::info!("Successfully initialized Actuator");
+                        services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(
+                            ActuatorServiceImpl::new(Arc::new(actuator)),
+                        )));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize Actuator: {}", e);
+                    }
+                }
 
-                Ok(vec![ServiceEnum::Actuator(ActuatorServiceServer::new(
-                    ActuatorServiceImpl::new(Arc::new(actuator)),
-                ))])
+                Ok(services)
             }
         })
     }
