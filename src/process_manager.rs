@@ -67,6 +67,12 @@ impl KBotProcessManager {
             .build()
             .wrap_err("Failed to create videoscale")?;
 
+        let videoflip = gst::ElementFactory::make("videoflip")
+            .name("videoflip0")
+            .property_from_str("video-direction", "vert")
+            .build()
+            .wrap_err("Failed to create videoflip")?;
+
         let scale_caps = gst::ElementFactory::make("capsfilter")
             .name("scale_caps")
             .property(
@@ -166,6 +172,7 @@ impl KBotProcessManager {
                 &src,
                 &src_caps,
                 &videoscale,
+                &videoflip,
                 &scale_caps,
                 &tee,
                 &queue_monitor,
@@ -185,6 +192,7 @@ impl KBotProcessManager {
             &src,
             &src_caps,
             &videoscale,
+            &videoflip,
             &scale_caps,
             &tee,
         ])?;
@@ -376,6 +384,14 @@ impl ProcessManager for KBotProcessManager {
                 telemetry_path.to_str().unwrap(),
                 merged_path.to_str().unwrap(),
             )?;
+
+            // Clean up temporary files
+            if let Err(e) = std::fs::remove_file(&video_path) {
+                tracing::warn!("Failed to remove temporary video file: {}", e);
+            }
+            if let Err(e) = std::fs::remove_file(&telemetry_path) {
+                tracing::warn!("Failed to remove temporary telemetry file: {}", e);
+            }
 
             Ok(KClipStopResponse {
                 clip_uuid: Some(uuid),
