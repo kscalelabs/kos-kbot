@@ -20,6 +20,7 @@ pub struct KBotProcessManager {
     kclip_uuid: Mutex<Option<String>>,
     pipeline: Mutex<Option<gst::Pipeline>>,
     telemetry_logger: Mutex<Option<TelemetryLogger>>,
+    current_action: Mutex<Option<String>>,
     robot_name: String,
     robot_serial: String,
 }
@@ -32,6 +33,7 @@ impl KBotProcessManager {
             kclip_uuid: Mutex::new(None),
             pipeline: Mutex::new(None),
             telemetry_logger: Mutex::new(None),
+            current_action: Mutex::new(None),
             robot_name,
             robot_serial,
         })
@@ -245,13 +247,14 @@ impl KBotProcessManager {
     }
 
     // Add a method to generate paths for a recording
-    fn recording_paths(uuid: &str) -> Result<(PathBuf, PathBuf, PathBuf)> {
+    fn recording_paths(uuid: &str, action: &str) -> Result<(PathBuf, PathBuf, PathBuf)> {
         let dir = Self::ensure_recordings_dir()?;
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+        let safe_action = action.replace(|c: char| !c.is_alphanumeric(), "_");
         Ok((
-            dir.join(format!("telemetry_{}.krec", uuid)),
-            dir.join(format!("video_{}.mkv", uuid)),
-            dir.join(format!("recording_{}_{}.krec.mkv", timestamp, uuid)),
+            dir.join(format!("telemetry_{}_{}.krec", safe_action, uuid)),
+            dir.join(format!("video_{}_{}.mkv", safe_action, uuid)),
+            dir.join(format!("recording_{}_{}_{}.krec.mkv", timestamp, safe_action, uuid)),
         ))
     }
 }
@@ -270,8 +273,10 @@ impl ProcessManager for KBotProcessManager {
             });
         }
 
+        *self.current_action.lock().await = Some(action.clone());
+
         let new_uuid = Uuid::new_v4().to_string();
-        let (telemetry_path, video_path, _) = Self::recording_paths(&new_uuid)?;
+        let (telemetry_path, video_path, _) = Self::recording_paths(&new_uuid, &action)?;
 
         *kclip_uuid = Some(new_uuid.clone());
         drop(kclip_uuid);
@@ -325,8 +330,13 @@ impl ProcessManager for KBotProcessManager {
             }
         };
 
+        let action = {
+            let mut action_guard = self.current_action.lock().await;
+            action_guard.take().unwrap_or_else(|| "unknown".to_string())
+        };
+
         // Get the paths
-        let (telemetry_path, video_path, merged_path) = Self::recording_paths(&uuid)?;
+        let (telemetry_path, video_path, merged_path) = Self::recording_paths(&uuid, &action)?;
 
         // Stop telemetry logger
         if let Some(logger) = self.telemetry_logger.lock().await.take() {
