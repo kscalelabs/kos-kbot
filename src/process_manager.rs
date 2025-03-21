@@ -141,17 +141,17 @@ impl KBotProcessManager {
                 .build(),
         );
 
-        let encoder = gst::ElementFactory::make("x265enc")
-            .name("x265enc0")
-            .property_from_str("tune", "zerolatency")
-            .property_from_str("speed-preset", "ultrafast")  // Faster encoding
+        let encoder = gst::ElementFactory::make("x264enc")
+            .name("x264enc0")
+            .property_from_str("tune", "stillimage")
+            .property_from_str("speed-preset", "ultrafast")
             .build()
-            .wrap_err("Failed to create H265 encoder")?;
+            .wrap_err("Failed to create H264 encoder")?;
 
-        let parser = gst::ElementFactory::make("h265parse")
-            .name("h265parse0")
+        let parser = gst::ElementFactory::make("h264parse")
+            .name("h264parse0")
             .build()
-            .wrap_err("Failed to create H265 parser")?;
+            .wrap_err("Failed to create H264 parser")?;
 
         let muxer = gst::ElementFactory::make("qtmux")
             .name("qtmux0")
