@@ -20,21 +20,35 @@ const REGDICT: [(u16, &'static str); 10] = [
 
 pub struct Hand {
     serial_port: Arc<Mutex<Box<dyn SerialPort + Send>>>,
-    finger_positions: Arc<Mutex<Vec<i32>>>,
+    finger_positions: Arc<Mutex<Vec<i32>>>,  // Current positions from polling
+    last_commanded_positions: Arc<Mutex<Vec<i32>>>,  // Last commanded positions
     hand_id: u8,
 }
 
 impl Hand {
-    pub fn new(port: &str, baudrate: u32, hand_id: u8) -> Result<Self> {
+    pub async fn new(port: &str, baudrate: u32, hand_id: u8) -> Result<Arc<Self>> {
         let serial_port = serialport::new(port, baudrate)
             .open()
             .map_err(|e| eyre!("Failed to open serial port: {}", e))?;
 
-        Ok(Self {
-            serial_port: Arc::new(Mutex::new(serial_port)),
+        let serial_port = Arc::new(Mutex::new(serial_port as Box<dyn SerialPort + Send>));
+        let hand = Self {
+            serial_port: serial_port.clone(),
             finger_positions: Arc::new(Mutex::new(vec![-1; 6])), // Initialize all to -1 (no position set)
+            last_commanded_positions: Arc::new(Mutex::new(vec![-1; 6])), // Initialize all to -1 (no position set)
             hand_id,
-        })
+        };
+
+        // Read current positions and set them as last commanded positions
+        let hand = Arc::new(hand);
+        let hand_clone = hand.clone();
+        let positions = hand_clone.read_6(hand_clone.hand_id, "angleAct").await?;
+        let mut last_commanded = hand_clone.last_commanded_positions.lock().await;
+        for (i, &pos) in positions.iter().enumerate() {
+            last_commanded[i] = pos;
+        }
+
+        Ok(hand)
     }
 
     #[instrument(skip(self))]
@@ -43,14 +57,14 @@ impl Hand {
             return Err(eyre!("Invalid finger index. Must be between 0 and 5."));
         }
 
-        let mut positions = self.finger_positions.lock().await;
-        positions[finger] = position;
+        let mut last_commanded = self.last_commanded_positions.lock().await;
+        last_commanded[finger] = position;
 
         trace!("Setting finger {} to position {}", finger, position);
 
-        // Create an array with the current positions
+        // Create an array with the last commanded positions
         let mut values = [0; 6];
-        for (i, &pos) in positions.iter().enumerate() {
+        for (i, &pos) in last_commanded.iter().enumerate() {
             values[i] = pos;
         }
 

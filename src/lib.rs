@@ -39,7 +39,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-const USE_POWERBOARD: bool = true;
+const USE_POWERBOARD: bool = false;
 
 pub struct KbotPlatform {}
 
@@ -193,7 +193,7 @@ impl Platform for KbotPlatform {
                         // "/dev/ttyCH341USB2",
                         // "/dev/ttyCH341USB3",
                         // "can0",
-                        "can1", "can0", "can3", "can4",
+                        "can1", "can0", "can2", "can3", "can4",
                     ],
                     Duration::from_secs(1),
                     // Duration::from_nanos(3_333_333),
@@ -406,8 +406,8 @@ impl Platform for KbotPlatform {
 
                 let left_hand = RH56Actuator::new(
                     operations_service.clone(),
-                    "/dev/ttyUSB2",
-                    1,
+                    "/dev/ttyUSB0",
+                    1,  
                     51,
                 )
                 .await
@@ -429,11 +429,11 @@ impl Platform for KbotPlatform {
                 ]);
                 // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
                 // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB1", 9600)
-                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
-                    .wrap_err("Failed to create IMU")?;
+                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
+                    // .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
-                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    // ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),

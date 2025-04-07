@@ -23,7 +23,7 @@ impl RH56Actuator {
         hand_id: u8,
         id_offset: u8,
     ) -> Result<Self> {
-        let hand = Arc::new(Hand::new(serial_port, 115200, hand_id)?);
+        let hand = Hand::new(serial_port, 115200, hand_id).await?;
         hand.clone().start().await?;
 
         Ok(RH56Actuator { hand, id_offset })
