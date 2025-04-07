@@ -40,6 +40,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const USE_POWERBOARD: bool = false;
+const USE_POWERBOARD: bool = false;
 
 pub struct KbotPlatform {}
 
@@ -183,6 +184,22 @@ impl Platform for KbotPlatform {
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
+                let mut services = Vec::new();
+
+                // Initialize IMU
+                match KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600) {
+                    Ok(imu) => {
+                        tracing::info!("Successfully initialized IMU");
+                        services.push(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(
+                            Arc::new(imu),
+                        ))));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize IMU: {}", e);
+                    }
+                }
+
+                // Initialize Actuator
                 let max_vel = 7200.0f32.to_radians();
 
                 let rs_actuator = RSActuator::new(
@@ -196,7 +213,6 @@ impl Platform for KbotPlatform {
                         "can1", "can0", "can2", "can3", "can4",
                     ],
                     Duration::from_secs(1),
-                    // Duration::from_nanos(3_333_333),
                     Duration::from_millis(2),
                     &[
                         // Left Arm

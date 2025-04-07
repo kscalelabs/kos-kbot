@@ -1,6 +1,8 @@
 """
 Real robot walking deployment script using PyKOS interface.
 Uses policies trained with the old k-bot urdf (head + shells)
+
+python walk_old.py --load_model models/night_before.kinfer
 """
 
 import argparse
@@ -20,7 +22,7 @@ from scipy.spatial.transform import Rotation as R
 
 ARM_IDS = [11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26]
 
-upper_arm_ids = [11, 12, 13, 14, 15, 21, 22, 23, 24, 25]
+upper_arm_ids = [11, 12, 13, 14, 21, 22, 23, 24] # , 21, 22, 23, 24] #[11, 12, 13, 14, 15, 21, 22, 23, 24, 25]
 
 # Ordered joint names for policy (legs only, top-down, left-right order)
 JOINT_NAME_LIST = [
@@ -152,6 +154,12 @@ class RobotState:
         # Convert from radians to degrees since position from policy is in radians
         position_deg = np.rad2deg(position)
         return position_deg * self.joint_signs[joint_name] - self.joint_offsets[joint_name]
+    
+    def apply_velocity(self, velocity: float, joint_name: str) -> float:
+        """Convert from radians to degrees and apply sign."""
+        # Convert from radians to degrees since position from policy is in radians
+        velocity_deg = np.rad2deg(velocity)
+        return velocity_deg * self.joint_signs[joint_name]
 
 async def run_robot(
     kos: KOS,
@@ -200,7 +208,7 @@ async def run_robot(
 
         # Freeze upper arms in place
         for arm_id in upper_arm_ids:
-            await kos.actuator.configure_actuator(actuator_id=arm_id, torque_enabled=False, zero_position=True)
+            await kos.actuator.configure_actuator(actuator_id=arm_id, kp=150, kd=10, torque_enabled=True, zero_position=False)
 
         await asyncio.sleep(1)
 
@@ -209,9 +217,9 @@ async def run_robot(
             arm_commands.append({"actuator_id": arm_id, "position": 0.0})
         await kos.actuator.command_actuators(arm_commands)
 
-        # enable upper arms
-        for arm_id in upper_arm_ids:
-            await kos.actuator.configure_actuator(actuator_id=arm_id, kp=150, kd=10, max_torque=100, torque_enabled=True)
+        # # enable upper arms
+        # for arm_id in upper_arm_ids:
+        #     await kos.actuator.configure_actuator(actuator_id=arm_id, kp=150, kd=10, max_torque=100, torque_enabled=True)
 
         # Capture current position as zero
         print("Capturing current position as zero...")
@@ -303,7 +311,9 @@ async def run_robot(
 
                     # Run policy
                     policy_output = policy(input_data)
-                    target_q = policy_output["actions_scaled"]
+                    target_q = policy_output["actions_scaled"][:model_info["num_joints"]]
+                    target_dq = policy_output["actions_scaled"][model_info["num_joints"]:]
+
                     prev_actions = policy_output["actions"]
                     hist_obs = policy_output["x.3"]
 
@@ -316,7 +326,12 @@ async def run_robot(
                     for i, joint_name in enumerate(JOINT_NAME_LIST):
                         joint_id = JOINT_NAME_TO_ID[joint_name]
                         position = robot_state.apply_command(float(target_q[i] + default[i]), joint_name)
-                        commands.append({"actuator_id": joint_id, "position": position})
+                        position = position * 1.0 # safety factor
+
+                        velocity = robot_state.apply_velocity(float(target_dq[i]), joint_name)
+                        velocity = velocity * 1.0 # safety factor
+
+                        commands.append({"actuator_id": joint_id, "position": position, "velocity": velocity})
                     await kos.actuator.command_actuators(commands)
 
                     process_times.append(next_time - time.time())
@@ -378,7 +393,7 @@ async def main():
             pygame.init()
             pygame.display.set_caption("Robot Control")
         else:
-            x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.0, 0.0, 0.0
+            x_vel_cmd, y_vel_cmd, yaw_vel_cmd = 0.1, 0.0, 0.0
 
         # Run robot control
         await run_robot(

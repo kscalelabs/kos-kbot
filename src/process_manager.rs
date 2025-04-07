@@ -20,6 +20,7 @@ pub struct KBotProcessManager {
     kclip_uuid: Mutex<Option<String>>,
     pipeline: Mutex<Option<gst::Pipeline>>,
     telemetry_logger: Mutex<Option<TelemetryLogger>>,
+    current_action: Mutex<Option<String>>,
     robot_name: String,
     robot_serial: String,
 }
@@ -32,6 +33,7 @@ impl KBotProcessManager {
             kclip_uuid: Mutex::new(None),
             pipeline: Mutex::new(None),
             telemetry_logger: Mutex::new(None),
+            current_action: Mutex::new(None),
             robot_name,
             robot_serial,
         })
@@ -43,43 +45,47 @@ impl KBotProcessManager {
         // Create elements
         let src = gst::ElementFactory::make("v4l2src")
             .name("src")
-            .property("device", "/dev/video0")
+            .property("device", "/dev/video47")
+            .property_from_str("io-mode", "2")  // Force memory mapping mode
             .build()
             .wrap_err("Failed to create v4l2src")?;
+
+        let src_caps = gst::ElementFactory::make("capsfilter")
+            .name("src_caps")
+            .property(
+                "caps",
+                gst::Caps::builder("video/x-raw")
+                    .field("format", "YUY2")
+                    .field("width", 1280i32)
+                    .field("height", 1080i32)
+                    .field("framerate", gst::Fraction::new(30, 1))
+                    .build(),
+            )
+            .build()
+            .wrap_err("Failed to create source capsfilter")?;
 
         let videoscale = gst::ElementFactory::make("videoscale")
             .name("videoscale0")
             .build()
             .wrap_err("Failed to create videoscale")?;
 
-        let capsfilter = gst::ElementFactory::make("capsfilter")
-            .name("capsfilter0")
+        let videoflip = gst::ElementFactory::make("videoflip")
+            .name("videoflip0")
+            .property_from_str("video-direction", "vert")
+            .build()
+            .wrap_err("Failed to create videoflip")?;
+
+        let scale_caps = gst::ElementFactory::make("capsfilter")
+            .name("scale_caps")
             .property(
                 "caps",
                 gst::Caps::builder("video/x-raw")
-                    .field("width", 640i32)
-                    .field("height", 480i32)
+                    .field("width", 512i32)
+                    .field("height", 512i32)
                     .build(),
             )
             .build()
-            .wrap_err("Failed to create capsfilter")?;
-
-        let nvvidconv = gst::ElementFactory::make("nvvidconv")
-            .name("nvvidconv0")
-            .build()
-            .wrap_err("Failed to create nvvidconv")?;
-
-        let nvvidconv_caps = gst::ElementFactory::make("capsfilter")
-            .name("nvvidconv_caps")
-            .property(
-                "caps",
-                gst::Caps::builder("video/x-raw")
-                    .features(["memory:NVMM"])
-                    .field("format", "NV12")
-                    .build(),
-            )
-            .build()
-            .wrap_err("Failed to create nvvidconv capsfilter")?;
+            .wrap_err("Failed to create scale capsfilter")?;
 
         let tee = gst::ElementFactory::make("tee")
             .name("tee0")
@@ -96,12 +102,21 @@ impl KBotProcessManager {
             .build()
             .wrap_err("Failed to create record queue")?;
 
+        let videoconvert_monitor = gst::ElementFactory::make("videoconvert")
+            .name("videoconvert_monitor")
+            .build()
+            .wrap_err("Failed to create monitor videoconvert")?;
+
+        let videoconvert_record = gst::ElementFactory::make("videoconvert")
+            .name("videoconvert_record")
+            .build()
+            .wrap_err("Failed to create record videoconvert")?;
+
         let appsink = gst_app::AppSink::builder()
             .name("appsink0")
             .caps(
                 &gst::Caps::builder("video/x-raw")
-                    .features(["memory:NVMM"])
-                    .field("format", "NV12")
+                    .field("format", "RGB")
                     .build(),
             )
             .build();
@@ -126,17 +141,21 @@ impl KBotProcessManager {
                 .build(),
         );
 
-        let encoder = gst::ElementFactory::make("nvv4l2h265enc")
-            .name("nvv4l2h265enc0")
+        let encoder = gst::ElementFactory::make("x264enc")
+            .name("x264enc0")
+            .property_from_str("tune", "stillimage")
+            .property_from_str("speed-preset", "ultrafast")
             .build()
-            .wrap_err("Failed to create H265 encoder")?;
+            .wrap_err("Failed to create H264 encoder")?;
 
-        let parser = gst::ElementFactory::make("h265parse")
-            .name("h265parse0")
+        let parser = gst::ElementFactory::make("h264parse")
+            .name("h264parse0")
             .build()
-            .wrap_err("Failed to create H265 parser")?;
+            .wrap_err("Failed to create H264 parser")?;
 
-        let muxer = gst::ElementFactory::make("qtmux").name("qtmux0").build()?;
+        let muxer = gst::ElementFactory::make("qtmux")
+            .name("qtmux0")
+            .build()?;
 
         let sink = gst::ElementFactory::make("filesink")
             .name("filesink0")
@@ -153,13 +172,15 @@ impl KBotProcessManager {
         pipeline
             .add_many(&[
                 &src,
+                &src_caps,
                 &videoscale,
-                &capsfilter,
-                &nvvidconv,
-                &nvvidconv_caps,
+                &videoflip,
+                &scale_caps,
                 &tee,
                 &queue_monitor,
+                &videoconvert_monitor,
                 &queue_record,
+                &videoconvert_record,
                 appsink.upcast_ref(),
                 &encoder,
                 &parser,
@@ -171,22 +192,33 @@ impl KBotProcessManager {
         // Link elements up to tee
         gst::Element::link_many(&[
             &src,
+            &src_caps,
             &videoscale,
-            &capsfilter,
-            &nvvidconv,
-            &nvvidconv_caps,
+            &videoflip,
+            &scale_caps,
             &tee,
         ])?;
 
         // Link monitoring branch
-        gst::Element::link_many(&[&queue_monitor, appsink.upcast_ref()])?;
+        gst::Element::link_many(&[
+            &queue_monitor,
+            &videoconvert_monitor,
+            appsink.upcast_ref(),
+        ])?;
 
         // Link recording branch
-        gst::Element::link_many(&[&queue_record, &encoder, &parser, &muxer, &sink])?;
+        gst::Element::link_many(&[
+            &queue_record,
+            &videoconvert_record,
+            &encoder,
+            &parser,
+            &muxer,
+            &sink,
+        ])?;
 
-        // Link tee to both queues using proper pad names
-        tee.link_pads(Some("src_%u"), &queue_monitor, None)?;
-        tee.link_pads(Some("src_%u"), &queue_record, None)?;
+        // Link tee to both queues
+        tee.link_pads(Some("src_0"), &queue_monitor, None)?;
+        tee.link_pads(Some("src_1"), &queue_record, None)?;
 
         Ok((pipeline, appsink.upcast()))
     }
@@ -215,13 +247,14 @@ impl KBotProcessManager {
     }
 
     // Add a method to generate paths for a recording
-    fn recording_paths(uuid: &str) -> Result<(PathBuf, PathBuf, PathBuf)> {
+    fn recording_paths(uuid: &str, action: &str) -> Result<(PathBuf, PathBuf, PathBuf)> {
         let dir = Self::ensure_recordings_dir()?;
         let timestamp = Local::now().format("%Y%m%d_%H%M%S");
+        let safe_action = action.replace(|c: char| !c.is_alphanumeric(), "_");
         Ok((
-            dir.join(format!("telemetry_{}.krec", uuid)),
-            dir.join(format!("video_{}.mkv", uuid)),
-            dir.join(format!("recording_{}_{}.krec.mkv", timestamp, uuid)),
+            dir.join(format!("telemetry_{}_{}.krec", safe_action, uuid)),
+            dir.join(format!("video_{}_{}.mkv", safe_action, uuid)),
+            dir.join(format!("recording_{}_{}_{}.krec.mkv", timestamp, safe_action, uuid)),
         ))
     }
 }
@@ -240,8 +273,10 @@ impl ProcessManager for KBotProcessManager {
             });
         }
 
+        *self.current_action.lock().await = Some(action.clone());
+
         let new_uuid = Uuid::new_v4().to_string();
-        let (telemetry_path, video_path, _) = Self::recording_paths(&new_uuid)?;
+        let (telemetry_path, video_path, _) = Self::recording_paths(&new_uuid, &action)?;
 
         *kclip_uuid = Some(new_uuid.clone());
         drop(kclip_uuid);
@@ -295,8 +330,13 @@ impl ProcessManager for KBotProcessManager {
             }
         };
 
+        let action = {
+            let mut action_guard = self.current_action.lock().await;
+            action_guard.take().unwrap_or_else(|| "unknown".to_string())
+        };
+
         // Get the paths
-        let (telemetry_path, video_path, merged_path) = Self::recording_paths(&uuid)?;
+        let (telemetry_path, video_path, merged_path) = Self::recording_paths(&uuid, &action)?;
 
         // Stop telemetry logger
         if let Some(logger) = self.telemetry_logger.lock().await.take() {
@@ -314,10 +354,9 @@ impl ProcessManager for KBotProcessManager {
             // Send EOS event
             pipeline.send_event(gst::event::Eos::new());
 
-            // Wait for EOS or Error message with timeout
-            let timeout = gst::ClockTime::from_seconds(5);
-            let msg =
-                bus.timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error]);
+            // Wait for EOS or Error message with a shorter timeout
+            let timeout = gst::ClockTime::from_seconds(2);
+            let msg = bus.timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error]);
 
             match msg {
                 Some(msg) => {
@@ -327,17 +366,7 @@ impl ProcessManager for KBotProcessManager {
                             tracing::info!("Pipeline received EOS");
                         }
                         MessageView::Error(err) => {
-                            return Ok(KClipStopResponse {
-                                clip_uuid: None,
-                                error: Some(Error {
-                                    code: ErrorCode::Unknown as i32,
-                                    message: format!(
-                                        "Pipeline error: {} ({})",
-                                        err.error(),
-                                        err.debug().unwrap_or_default()
-                                    ),
-                                }),
-                            });
+                            tracing::error!("Pipeline error: {} ({})", err.error(), err.debug().unwrap_or_default());
                         }
                         _ => unreachable!(),
                     }
@@ -347,20 +376,8 @@ impl ProcessManager for KBotProcessManager {
                 }
             }
 
-            // Change state to NULL
-            let state_change = pipeline
-                .set_state(gst::State::Null)
-                .map_err(|e| eyre!("Failed to set pipeline state to Null: {}", e))?;
-
-            if !matches!(state_change, gst::StateChangeSuccess::Success) {
-                return Ok(KClipStopResponse {
-                    clip_uuid: None,
-                    error: Some(Error {
-                        code: ErrorCode::Unknown as i32,
-                        message: "Failed to change pipeline state to Null".to_string(),
-                    }),
-                });
-            }
+            // Force state change to NULL immediately
+            pipeline.set_state(gst::State::Null)?;
 
             // Clear the pipeline
             *pipeline_guard = None;
@@ -377,6 +394,14 @@ impl ProcessManager for KBotProcessManager {
                 telemetry_path.to_str().unwrap(),
                 merged_path.to_str().unwrap(),
             )?;
+
+            // Clean up temporary files
+            if let Err(e) = std::fs::remove_file(&video_path) {
+                tracing::warn!("Failed to remove temporary video file: {}", e);
+            }
+            if let Err(e) = std::fs::remove_file(&telemetry_path) {
+                tracing::warn!("Failed to remove temporary telemetry file: {}", e);
+            }
 
             Ok(KClipStopResponse {
                 clip_uuid: Some(uuid),
