@@ -76,12 +76,14 @@ impl HALIMU for KBotIMU {
         );
 
         Ok(ImuValuesResponse {
-            accel_x: data.accelerometer[0] as f64,
-            accel_y: data.accelerometer[1] as f64,
-            accel_z: data.accelerometer[2] as f64,
-            gyro_x: data.gyroscope[0] as f64,
-            gyro_y: data.gyroscope[1] as f64,
-            gyro_z: data.gyroscope[2] as f64,
+            // Raw Units from IMU are in m/s^2 / g, convert to m/s^2
+            accel_x: (data.accelerometer[0] as f64) * 9.81,
+            accel_y: (data.accelerometer[1] as f64) * 9.81,
+            accel_z: (data.accelerometer[2] as f64) * 9.81,
+            // Raw units from IMU are in deg/s / 2000.0., convert to rad/s
+            gyro_x: (data.gyroscope[0] as f64) * (2000.0 * 3.14159 / 180.0),
+            gyro_y: (data.gyroscope[1] as f64) * (2000.0 * 3.14159 / 180.0),
+            gyro_z: (data.gyroscope[2] as f64) * (2000.0 * 3.14159 / 180.0),
             mag_x: None,
             mag_y: None,
             mag_z: None,
