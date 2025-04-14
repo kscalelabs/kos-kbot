@@ -76,9 +76,11 @@ impl HALIMU for KBotIMU {
         );
 
         Ok(ImuValuesResponse {
+            // Accelerometer values are given in m/s^2
             accel_x: data.accelerometer[0] as f64,
             accel_y: data.accelerometer[1] as f64,
             accel_z: data.accelerometer[2] as f64,
+            // Gyroscope values are given in rad/s
             gyro_x: data.gyroscope[0] as f64,
             gyro_y: data.gyroscope[1] as f64,
             gyro_z: data.gyroscope[2] as f64,
