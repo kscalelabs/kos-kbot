@@ -2,15 +2,12 @@ mod actuator;
 mod process_manager;
 
 #[cfg(target_os = "linux")]
-// mod hexmove;
-mod hiwonder;
+mod kbot_imu;
 
 pub use actuator::*;
 pub use robstride::{ActuatorConfiguration, ActuatorType};
 
 #[cfg(target_os = "linux")]
-// pub use hexmove::*;
-pub use hiwonder::*;
 pub use process_manager::*;
 
 use async_trait::async_trait;
@@ -180,17 +177,55 @@ impl Platform for KbotPlatform {
 
                 let mut services = Vec::new();
 
-                // Initialize IMU
-                match KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600) {
-                    Ok(imu) => {
-                        tracing::info!("Successfully initialized IMU");
-                        services.push(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(
-                            Arc::new(imu),
-                        ))));
+                // Initialize IMU based on feature flags
+                let imu_service = {
+                    #[cfg(feature = "imu_hiwonder")]
+                    {
+                        tracing::info!("Using Hiwonder IMU (feature: imu_hiwonder)");
+                        match kbot_imu::hiwonder::KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600) {
+                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu))))),
+                            Err(e) => {
+                                tracing::warn!("Failed to initialize Hiwonder IMU: {}", e);
+                                None
+                            }
+                        }
                     }
-                    Err(e) => {
-                        tracing::warn!("Failed to initialize IMU: {}", e);
+                    #[cfg(feature = "imu_bno055")]
+                    {
+                        tracing::info!("Using BNO055 IMU (feature: imu_bno055)");
+                        match kbot_imu::bno055::KBotIMU::new(operations_service.clone(), "/dev/i2c-1", 115200) {
+                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu))))),
+                            Err(e) => {
+                                tracing::warn!("Failed to initialize BNO055 IMU: {}", e);
+                                None
+                            }
+                        }
                     }
+                    #[cfg(feature = "imu_hexmove")]
+                    {
+                        tracing::info!("Using Hexmove IMU (feature: imu_hexmove)");
+                        match kbot_imu::hexmove::KBotIMU::new(operations_service.clone(), "can0", 1, 1) { // Example CAN params
+                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu))))),
+                            Err(e) => {
+                                tracing::warn!("Failed to initialize Hexmove IMU: {}", e);
+                                None
+                            }
+                        }
+                    }
+                    // The compile_error in mod.rs should prevent this arm from ever being needed at runtime,
+                    // but we include it to satisfy the compiler if no features were hypothetically passed.
+                    #[cfg(not(any(feature = "imu_hiwonder", feature = "imu_hexmove", feature = "imu_bno055")))]
+                    {
+                         tracing::error!("Build configuration error: No IMU feature selected!"); // Should not happen
+                         None
+                    }
+                };
+
+                if let Some(service) = imu_service {
+                    tracing::info!("Successfully initialized IMU service.");
+                    services.push(service);
+                } else {
+                     tracing::warn!("IMU service not added due to initialization failure or configuration issue.");
                 }
 
                 // Initialize Actuator
