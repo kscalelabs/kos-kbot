@@ -13,6 +13,12 @@ license = "MIT"
 repository = "https://github.com/kscalelabs/kos-kbot"
 description = "KOS platform for KBot"
 
+[features]
+default = ["imu_bno055"]
+imu_hiwonder=[]
+imu_hexmove=[]
+imu_bno055=[]
+
 [dependencies]
 # kos = {path="../kos/kos"}
 kos = "0.7.4"
