@@ -46,7 +46,7 @@ impl KBotProcessManager {
         let src = gst::ElementFactory::make("v4l2src")
             .name("src")
             .property("device", "/dev/video47")
-            .property_from_str("io-mode", "2")  // Force memory mapping mode
+            .property_from_str("io-mode", "2") // Force memory mapping mode
             .build()
             .wrap_err("Failed to create v4l2src")?;
 
@@ -153,9 +153,7 @@ impl KBotProcessManager {
             .build()
             .wrap_err("Failed to create H264 parser")?;
 
-        let muxer = gst::ElementFactory::make("qtmux")
-            .name("qtmux0")
-            .build()?;
+        let muxer = gst::ElementFactory::make("qtmux").name("qtmux0").build()?;
 
         let sink = gst::ElementFactory::make("filesink")
             .name("filesink0")
@@ -190,21 +188,10 @@ impl KBotProcessManager {
             .wrap_err("Failed to add elements to pipeline")?;
 
         // Link elements up to tee
-        gst::Element::link_many(&[
-            &src,
-            &src_caps,
-            &videoscale,
-            &videoflip,
-            &scale_caps,
-            &tee,
-        ])?;
+        gst::Element::link_many(&[&src, &src_caps, &videoscale, &videoflip, &scale_caps, &tee])?;
 
         // Link monitoring branch
-        gst::Element::link_many(&[
-            &queue_monitor,
-            &videoconvert_monitor,
-            appsink.upcast_ref(),
-        ])?;
+        gst::Element::link_many(&[&queue_monitor, &videoconvert_monitor, appsink.upcast_ref()])?;
 
         // Link recording branch
         gst::Element::link_many(&[
@@ -254,7 +241,10 @@ impl KBotProcessManager {
         Ok((
             dir.join(format!("telemetry_{}_{}.krec", safe_action, uuid)),
             dir.join(format!("video_{}_{}.mkv", safe_action, uuid)),
-            dir.join(format!("recording_{}_{}_{}.krec.mkv", timestamp, safe_action, uuid)),
+            dir.join(format!(
+                "recording_{}_{}_{}.krec.mkv",
+                timestamp, safe_action, uuid
+            )),
         ))
     }
 }
@@ -356,7 +346,8 @@ impl ProcessManager for KBotProcessManager {
 
             // Wait for EOS or Error message with a shorter timeout
             let timeout = gst::ClockTime::from_seconds(2);
-            let msg = bus.timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error]);
+            let msg =
+                bus.timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error]);
 
             match msg {
                 Some(msg) => {
@@ -366,7 +357,11 @@ impl ProcessManager for KBotProcessManager {
                             tracing::info!("Pipeline received EOS");
                         }
                         MessageView::Error(err) => {
-                            tracing::error!("Pipeline error: {} ({})", err.error(), err.debug().unwrap_or_default());
+                            tracing::error!(
+                                "Pipeline error: {} ({})",
+                                err.error(),
+                                err.debug().unwrap_or_default()
+                            );
                         }
                         _ => unreachable!(),
                     }

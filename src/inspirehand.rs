@@ -20,8 +20,8 @@ const REGDICT: [(u16, &'static str); 10] = [
 
 pub struct Hand {
     serial_port: Arc<Mutex<Box<dyn SerialPort + Send>>>,
-    finger_positions: Arc<Mutex<Vec<i32>>>,  // Current positions from polling
-    last_commanded_positions: Arc<Mutex<Vec<i32>>>,  // Last commanded positions
+    finger_positions: Arc<Mutex<Vec<i32>>>, // Current positions from polling
+    last_commanded_positions: Arc<Mutex<Vec<i32>>>, // Last commanded positions
     hand_id: u8,
 }
 
@@ -101,7 +101,11 @@ impl Hand {
 
         // Clear response buffer
         let mut buf = [0u8; 128];
-        serial.read(&mut buf)?;
+        while let Ok(n) = serial.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+        }
 
         Ok(())
     }

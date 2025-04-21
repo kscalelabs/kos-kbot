@@ -1,17 +1,17 @@
-mod inspirehand;
-mod process_manager;
-mod rh56actuator;
-mod rsactuator;
-mod proxyactuator;
 #[cfg(target_os = "linux")]
 // mod hexmove;
 mod hiwonder;
+mod inspirehand;
+mod process_manager;
+mod proxyactuator;
+mod rh56actuator;
+mod rsactuator;
 
 pub use inspirehand::*;
-pub use rh56actuator::*;
-pub use rsactuator::*;
 pub use proxyactuator::*;
+pub use rh56actuator::*;
 pub use robstride::{ActuatorConfiguration, ActuatorType};
+pub use rsactuator::*;
 
 #[cfg(target_os = "linux")]
 // pub use hexmove::*;
@@ -184,9 +184,7 @@ impl Platform for KbotPlatform {
 
                 let rs_actuator = RSActuator::new(
                     operations_service.clone(),
-                    vec![
-                        "can0", "can1", "can2", "can3", "can4",
-                    ],
+                    vec!["can0", "can1", "can2", "can3", "can4"],
                     Duration::from_secs(1),
                     Duration::from_millis(2),
                     &[
@@ -398,28 +396,18 @@ impl Platform for KbotPlatform {
                 let mut actuators_to_add: Vec<(
                     Box<dyn Actuator + Send + Sync>,
                     std::ops::RangeInclusive<u8>,
-                )> = vec![
-                    (Box::new(rs_actuator), 1..=49),
-                ];
-                
+                )> = vec![(Box::new(rs_actuator), 1..=49)];
+
                 if USE_HANDS {
-                    let left_hand = RH56Actuator::new(
-                        operations_service.clone(),
-                        "/dev/ttyUSB0",
-                        1,  
-                        51,
-                    )
-                    .await
-                    .wrap_err("Failed to create left hand")?;
-    
-                    let right_hand = RH56Actuator::new(
-                        operations_service.clone(),
-                        "/dev/ttyUSB1",
-                        1,
-                        61,
-                    )
-                    .await
-                    .wrap_err("Failed to create right hand")?;
+                    let left_hand =
+                        RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB0", 1, 51)
+                            .await
+                            .wrap_err("Failed to create left hand")?;
+
+                    let right_hand =
+                        RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB1", 1, 61)
+                            .await
+                            .wrap_err("Failed to create right hand")?;
 
                     actuators_to_add.push((Box::new(left_hand), 51..=56));
                     actuators_to_add.push((Box::new(right_hand), 61..=66));
@@ -444,7 +432,6 @@ impl Platform for KbotPlatform {
         })
     }
 
-
     fn shutdown(&mut self) -> eyre::Result<()> {
         // Signal powerboard monitoring to stop
         if let Some(shutdown) = SHUTDOWN_SIGNAL.get().and_then(|lock| lock.lock().take()) {
@@ -453,7 +440,6 @@ impl Platform for KbotPlatform {
         }
         Ok(())
     }
-
 }
 
 impl Drop for KbotPlatform {
