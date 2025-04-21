@@ -85,7 +85,9 @@ impl HALIMU for KBotIMU {
 
         debug!(
             "Reading BNO055 advanced values, lin_accel: {:?}, gravity: {:?}, temp: {}",
-            data.linear_acceleration, data.gravity, data.temperature.unwrap_or_default()
+            data.linear_acceleration,
+            data.gravity,
+            data.temperature.unwrap_or_default()
         );
 
         Ok(ImuAdvancedValuesResponse {
@@ -141,9 +143,9 @@ impl HALIMU for KBotIMU {
 
         // Euler angles are in degrees
         Ok(EulerAnglesResponse {
-            roll: data.euler.unwrap_or_default().x as f64,   // x-axis
+            roll: data.euler.unwrap_or_default().x as f64, // x-axis
             pitch: data.euler.unwrap_or_default().y as f64, // y-axis
-            yaw: data.euler.unwrap_or_default().z as f64,     // z-axis
+            yaw: data.euler.unwrap_or_default().z as f64,  // z-axis
             error: None,
         })
     }
