@@ -9,7 +9,7 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::Result;
-use imu::bno055::*;
+use imu::{Bno055Reader, ImuReader};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
@@ -62,17 +62,17 @@ impl HALIMU for KBotIMU {
 
         Ok(ImuValuesResponse {
             // Accelerometer values are in m/s^2
-            accel_x: data.accelerometer.x as f64,
-            accel_y: data.accelerometer.y as f64,
-            accel_z: data.accelerometer.z as f64,
+            accel_x: data.accelerometer.unwrap_or_default().x as f64,
+            accel_y: data.accelerometer.unwrap_or_default().y as f64,
+            accel_z: data.accelerometer.unwrap_or_default().z as f64,
             // Gyroscope values are in deg/s
-            gyro_x: data.gyroscope.x as f64,
-            gyro_y: data.gyroscope.y as f64,
-            gyro_z: data.gyroscope.z as f64,
+            gyro_x: data.gyroscope.unwrap_or_default().x as f64,
+            gyro_y: data.gyroscope.unwrap_or_default().y as f64,
+            gyro_z: data.gyroscope.unwrap_or_default().z as f64,
             // Magnetometer values are in microTesla (µT)
-            mag_x: Some(data.magnetometer.x as f64),
-            mag_y: Some(data.magnetometer.y as f64),
-            mag_z: Some(data.magnetometer.z as f64),
+            mag_x: Some(data.magnetometer.unwrap_or_default().x as f64),
+            mag_y: Some(data.magnetometer.unwrap_or_default().y as f64),
+            mag_z: Some(data.magnetometer.unwrap_or_default().z as f64),
             error: None,
         })
     }
@@ -85,20 +85,20 @@ impl HALIMU for KBotIMU {
 
         debug!(
             "Reading BNO055 advanced values, lin_accel: {:?}, gravity: {:?}, temp: {}",
-            data.linear_acceleration, data.gravity, data.temperature
+            data.linear_acceleration, data.gravity, data.temperature.unwrap_or_default()
         );
 
         Ok(ImuAdvancedValuesResponse {
             // Linear acceleration in m/s^2
-            lin_acc_x: Some(data.linear_acceleration.x as f64),
-            lin_acc_y: Some(data.linear_acceleration.y as f64),
-            lin_acc_z: Some(data.linear_acceleration.z as f64),
+            lin_acc_x: Some(data.linear_acceleration.unwrap_or_default().x as f64),
+            lin_acc_y: Some(data.linear_acceleration.unwrap_or_default().y as f64),
+            lin_acc_z: Some(data.linear_acceleration.unwrap_or_default().z as f64),
             // Gravity vector in m/s^2
-            grav_x: Some(data.gravity.x as f64),
-            grav_y: Some(data.gravity.y as f64),
-            grav_z: Some(data.gravity.z as f64),
+            grav_x: Some(data.gravity.unwrap_or_default().x as f64),
+            grav_y: Some(data.gravity.unwrap_or_default().y as f64),
+            grav_z: Some(data.gravity.unwrap_or_default().z as f64),
             // Temperature in Celsius
-            temp: Some(data.temperature as f64),
+            temp: Some(data.temperature.unwrap_or_default() as f64),
             error: None,
         })
     }
@@ -141,9 +141,9 @@ impl HALIMU for KBotIMU {
 
         // Euler angles are in degrees
         Ok(EulerAnglesResponse {
-            roll: data.euler.roll as f64,   // x-axis
-            pitch: data.euler.pitch as f64, // y-axis
-            yaw: data.euler.yaw as f64,     // z-axis
+            roll: data.euler.unwrap_or_default().x as f64,   // x-axis
+            pitch: data.euler.unwrap_or_default().y as f64, // y-axis
+            yaw: data.euler.unwrap_or_default().z as f64,     // z-axis
             error: None,
         })
     }
@@ -157,10 +157,10 @@ impl HALIMU for KBotIMU {
         debug!("Reading BNO055 quaternion: {:?}", data.quaternion);
 
         Ok(QuaternionResponse {
-            w: data.quaternion.w as f64,
-            x: data.quaternion.x as f64,
-            y: data.quaternion.y as f64,
-            z: data.quaternion.z as f64,
+            w: data.quaternion.unwrap_or_default().w as f64,
+            x: data.quaternion.unwrap_or_default().x as f64,
+            y: data.quaternion.unwrap_or_default().y as f64,
+            z: data.quaternion.unwrap_or_default().z as f64,
             error: None,
         })
     }

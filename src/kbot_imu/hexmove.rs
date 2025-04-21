@@ -9,14 +9,14 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::{Result, WrapErr};
-use imu::hexmove::*;
+use imu::{HexmoveImuReader, ImuReader};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, trace};
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
-    imu: ImuReader,
+    imu: HexmoveImuReader,
 }
 
 impl KBotIMU {
@@ -36,7 +36,7 @@ impl KBotIMU {
         let model =
             u8::try_from(model).wrap_err_with(|| format!("Model ID {} too large for u8", model))?;
 
-        let imu = match ImuReader::new(interface, can_id, model) {
+        let imu = match HexmoveImuReader::new(interface, can_id, model) {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
                 imu
@@ -69,21 +69,21 @@ impl IMU for KBotIMU {
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
         trace!(
             "Reading IMU values, accel x: {}, y: {}, z: {}, angle x: {}, y: {}, z: {}",
-            data.x_velocity,
-            data.y_velocity,
-            data.z_velocity,
-            data.x_angle,
-            data.y_angle,
-            data.z_angle
+            data.accelerometer.unwrap_or_default().x,
+            data.accelerometer.unwrap_or_default().y,
+            data.accelerometer.unwrap_or_default().z,
+            data.euler.unwrap_or_default().x,
+            data.euler.unwrap_or_default().y,
+            data.euler.unwrap_or_default().z
         );
 
         Ok(ImuValuesResponse {
-            accel_x: data.x_velocity as f64,
-            accel_y: data.y_velocity as f64,
-            accel_z: data.z_velocity as f64,
-            gyro_x: 0 as f64,
-            gyro_y: 0 as f64,
-            gyro_z: 0 as f64,
+            accel_x: data.accelerometer.unwrap_or_default().x as f64,
+            accel_y: data.accelerometer.unwrap_or_default().y as f64,
+            accel_z: data.accelerometer.unwrap_or_default().z as f64,
+            gyro_x: data.gyroscope.unwrap_or_default().x as f64,
+            gyro_y: data.gyroscope.unwrap_or_default().y as f64,
+            gyro_z: data.gyroscope.unwrap_or_default().z as f64,
             mag_x: None,
             mag_y: None,
             mag_z: None,
@@ -116,32 +116,18 @@ impl IMU for KBotIMU {
 
     async fn zero(
         &self,
-        duration: Option<Duration>,
-        max_retries: Option<u32>,
-        max_angular_error: Option<f32>,
+        _duration: Option<Duration>,
+        _max_retries: Option<u32>,
+        _max_angular_error: Option<f32>,
         _max_vel: Option<f32>,
         _max_accel: Option<f32>,
     ) -> Result<ActionResponse> {
-        if self
-            .imu
-            .zero_imu(
-                duration.map(|d| d.as_millis() as u64),
-                max_retries,
-                max_angular_error,
-            )
-            .is_err()
-        {
-            return Ok(ActionResponse {
-                success: false,
-                error: Some(Error {
-                    code: ErrorCode::HardwareFailure as i32,
-                    message: "Failed to zero IMU".to_string(),
-                }),
-            });
-        }
         Ok(ActionResponse {
-            success: true,
-            error: None,
+            success: false,
+            error: Some(Error {
+                code: ErrorCode::HardwareFailure as i32,
+                message: "Hexmove IMU does not support zeroing".to_string(),
+            }),
         })
     }
 
@@ -152,9 +138,9 @@ impl IMU for KBotIMU {
             .get_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
         Ok(EulerAnglesResponse {
-            roll: data.x_angle as f64,
-            pitch: data.y_angle as f64,
-            yaw: data.z_angle as f64,
+            roll: data.euler.unwrap_or_default().x as f64,
+            pitch: data.euler.unwrap_or_default().y as f64,
+            yaw: data.euler.unwrap_or_default().z as f64,
             error: None,
         })
     }
@@ -166,10 +152,10 @@ impl IMU for KBotIMU {
             .get_data()
             .map_err(|e| eyre::eyre!("Failed to get IMU data: {}", e))?;
         Ok(QuaternionResponse {
-            w: data.qw as f64,
-            x: data.qx as f64,
-            y: data.qy as f64,
-            z: data.qz as f64,
+            w: data.quaternion.unwrap_or_default().w as f64,
+            x: data.quaternion.unwrap_or_default().x as f64,
+            y: data.quaternion.unwrap_or_default().y as f64,
+            z: data.quaternion.unwrap_or_default().z as f64,
             error: None,
         })
     }
