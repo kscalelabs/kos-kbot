@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
+const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
+
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
     imu: Arc<Mutex<HiwonderReader>>,
@@ -138,10 +140,11 @@ impl HALIMU for KBotIMU {
             .get_data()
             .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
 
+        // Convert from radians to degrees
         Ok(EulerAnglesResponse {
-            roll: data.euler.unwrap_or_default().x as f64,
-            pitch: data.euler.unwrap_or_default().y as f64,
-            yaw: data.euler.unwrap_or_default().z as f64,
+            roll: data.euler.unwrap_or_default().x as f64 * RAD_TO_DEG,
+            pitch: data.euler.unwrap_or_default().y as f64 * RAD_TO_DEG,
+            yaw: data.euler.unwrap_or_default().z as f64 * RAD_TO_DEG,
             error: None,
         })
     }
