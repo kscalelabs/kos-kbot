@@ -2,7 +2,11 @@ pub mod bno055;
 pub mod hexmove;
 pub mod hiwonder;
 
-#[cfg(not(any(feature = "imu_hiwonder", feature = "imu_hexmove", feature = "imu_bno055")))]
+#[cfg(not(any(
+    feature = "imu_hiwonder",
+    feature = "imu_hexmove",
+    feature = "imu_bno055"
+)))]
 compile_error!(
     "An IMU feature flag must be enabled. Choose one of: imu_hiwonder, imu_hexmove, imu_bno055"
 );

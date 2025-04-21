@@ -20,14 +20,8 @@ pub struct KBotIMU {
 }
 
 impl KBotIMU {
-    pub fn new(
-        operations_service: Arc<OperationsServiceImpl>,
-        i2c_bus: &str,
-    ) -> Result<Self> {
-        info!(
-            "Initializing KBotIMU (BNO055) with interface: {}",
-            i2c_bus
-        );
+    pub fn new(operations_service: Arc<OperationsServiceImpl>, i2c_bus: &str) -> Result<Self> {
+        info!("Initializing KBotIMU (BNO055) with interface: {}", i2c_bus);
 
         let imu_reader = match Bno055Reader::new(i2c_bus) {
             Ok(imu) => {
@@ -147,9 +141,9 @@ impl HALIMU for KBotIMU {
 
         // Euler angles are in degrees
         Ok(EulerAnglesResponse {
-            roll: data.euler.roll as f64, // x-axis
+            roll: data.euler.roll as f64,   // x-axis
             pitch: data.euler.pitch as f64, // y-axis
-            yaw: data.euler.yaw as f64,   // z-axis
+            yaw: data.euler.yaw as f64,     // z-axis
             error: None,
         })
     }
