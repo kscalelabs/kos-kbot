@@ -193,7 +193,7 @@ impl Platform for KbotPlatform {
                     #[cfg(feature = "imu_bno055")]
                     {
                         tracing::info!("Using BNO055 IMU (feature: imu_bno055)");
-                        match kbot_imu::bno055::KBotIMU::new(operations_service.clone(), "/dev/i2c-1", 115200) {
+                        match kbot_imu::bno055::KBotIMU::new(operations_service.clone(), "/dev/i2c-1") {
                             Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu))))),
                             Err(e) => {
                                 tracing::warn!("Failed to initialize BNO055 IMU: {}", e);

@@ -104,7 +104,7 @@ impl HALIMU for KBotIMU {
             grav_y: Some(data.gravity.y as f64),
             grav_z: Some(data.gravity.z as f64),
             // Temperature in Celsius
-            temp: Some(data.temperature as f32),
+            temp: Some(data.temperature as f64),
             error: None,
         })
     }
