@@ -9,7 +9,6 @@ use kos::{
         common::{ActionResult, ErrorCode},
     },
 };
-use std::time::Duration;
 
 pub struct RH56Actuator {
     hand: Arc<Hand>,

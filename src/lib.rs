@@ -40,7 +40,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const USE_POWERBOARD: bool = false;
-const USE_POWERBOARD: bool = false;
+const USE_HANDS: bool = false;
 
 pub struct KbotPlatform {}
 
@@ -184,20 +184,7 @@ impl Platform for KbotPlatform {
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
-                let mut services = Vec::new();
-
-                // Initialize IMU
-                match KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600) {
-                    Ok(imu) => {
-                        tracing::info!("Successfully initialized IMU");
-                        services.push(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(
-                            Arc::new(imu),
-                        ))));
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to initialize IMU: {}", e);
-                    }
-                }
+                let mut services: Vec<ServiceEnum> = Vec::new();
 
                 // Initialize Actuator
                 let max_vel = 7200.0f32.to_radians();
@@ -247,7 +234,7 @@ impl Platform for KbotPlatform {
                             14,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_angle_change: Some(55.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -301,7 +288,7 @@ impl Platform for KbotPlatform {
                             24,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_angle_change: Some(55.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -419,37 +406,43 @@ impl Platform for KbotPlatform {
                 )
                 .await
                 .wrap_err("Failed to create actuator")?;
+                
+                if USE_HANDS {
+                    let left_hand = RH56Actuator::new(
+                        operations_service.clone(),
+                        "/dev/ttyUSB0",
+                        1,  
+                        51,
+                    )
+                    .await
+                    .wrap_err("Failed to create left hand")?;
+    
+                    let right_hand = RH56Actuator::new(
+                        operations_service.clone(),
+                        "/dev/ttyUSB1",
+                        1,
+                        61,
+                    )
+                    .await
+                    .wrap_err("Failed to create right hand")?;
+                }
 
-                let left_hand = RH56Actuator::new(
-                    operations_service.clone(),
-                    "/dev/ttyUSB0",
-                    1,  
-                    51,
-                )
-                .await
-                .wrap_err("Failed to create left hand")?;
 
-                let right_hand = RH56Actuator::new(
-                    operations_service.clone(),
-                    "/dev/ttyUSB1",
-                    1,
-                    61,
-                )
-                .await
-                .wrap_err("Failed to create right hand")?;
-
-                let actuator = ProxyActuator::new(vec![
+                actuators_to_add = vec![
                     (Box::new(rs_actuator), 1..=49),
-                    (Box::new(left_hand), 51..=56),
-                    (Box::new(right_hand), 61..=66),
-                ]);
-                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB0", 9600)
-                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyCH341USB1", 9600)
-                // let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
-                    // .wrap_err("Failed to create IMU")?;
+                ]
+
+                if USE_HANDS {
+                    actuators_to_add.push((Box::new(left_hand), 51..=56));
+                    actuators_to_add.push((Box::new(right_hand), 61..=66));
+                }
+
+                let actuator = ProxyActuator::new(actuators_to_add);
+                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
+                    .wrap_err("Failed to create IMU")?;
 
                 Ok(vec![
-                    // ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
                     ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
                         Arc::new(actuator),
                     ))),
@@ -459,26 +452,6 @@ impl Platform for KbotPlatform {
                 ])
             } else {
                 unimplemented!("ouch");
-                //     operations_service,
-                //     vec!["can0"],
-                //     Duration::from_secs(1),
-                //     Duration::from_nanos(3_333_333),
-                //     &[(
-                //         1,
-                //         robstride::ActuatorConfiguration {
-                //             actuator_type: ActuatorType::RobStride04,
-                //             max_angle_change: Some(2.0f32.to_radians()),
-                //             max_velocity: Some(720.0f32.to_radians()),
-                //             command_rate_hz: Some(100.0),
-                //         },
-                //     )],
-                // )
-                // .await
-                // .wrap_err("Failed to create actuator")?;
-
-                // Ok(vec![ServiceEnum::Actuator(ActuatorServiceServer::new(
-                //     ActuatorServiceImpl::new(Arc::new(actuator)),
-                // ))])
             }
         })
     }

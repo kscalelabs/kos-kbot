@@ -3,7 +3,8 @@ import pykos
 
 async def main():
     async with pykos.KOS() as kos:
-        for id in range(60):
+        # for id in range(60):
+        for id in [25]:
             try:
                 await kos.actuator.configure_actuator(actuator_id=id, torque_enabled=False, zero_position=True)
             except Exception as e:
