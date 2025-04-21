@@ -462,18 +462,18 @@ impl Platform for KbotPlatform {
                 }
 
                 let actuator = ProxyActuator::new(actuators_to_add);
-                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
-                    .wrap_err("Failed to create IMU")?;
+                
+                services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
+                    Arc::new(actuator),
+                ))));
 
-                Ok(vec![
-                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
-                    ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
-                        Arc::new(actuator),
-                    ))),
+                services.push(
                     ServiceEnum::ProcessManager(ProcessManagerServiceServer::new(
                         ProcessManagerServiceImpl::new(Arc::new(process_manager)),
-                    )),
-                ])
+                    ))
+                );
+
+                Ok(services)
             } else {
                 unimplemented!("ouch");
             }

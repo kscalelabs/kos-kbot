@@ -14,7 +14,7 @@ repository = "https://github.com/kscalelabs/kos-kbot"
 description = "KOS platform for KBot"
 
 [features]
-default = ["imu_bno055"]
+default = ["imu_hiwonder"]
 imu_hiwonder=[]
 imu_hexmove=[]
 imu_bno055=[]
