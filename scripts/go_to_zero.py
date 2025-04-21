@@ -6,12 +6,12 @@ async def main():
         # configure all actuators
         for id in range(60):
             try:
-                await kos.actuator.configure_actuator(actuator_id=id, kp=150, kd=10, torque_enabled=True)
+                await kos.actuator.configure_actuator(actuator_id=id, kp=50, kd=5, torque_enabled=True)
             except Exception as e:
                 print(f"Failed to configure actuator {id}")
         await asyncio.sleep(1)
 
-        commands = [{'actuator_id': id, 'position': 0.0} for id in range(60)]
+        commands = [{'actuator_id': id, 'position': 0.0, 'velocity': 10.0} for id in range(60)]
         await kos.actuator.command_actuators(commands)
 
 if __name__ == "__main__":

@@ -1,12 +1,17 @@
-mod actuator;
-mod process_manager;
-
 #[cfg(target_os = "linux")]
 // mod hexmove;
 mod hiwonder;
+mod inspirehand;
+mod process_manager;
+mod proxyactuator;
+mod rh56actuator;
+mod rsactuator;
 
-pub use actuator::*;
+pub use inspirehand::*;
+pub use proxyactuator::*;
+pub use rh56actuator::*;
 pub use robstride::{ActuatorConfiguration, ActuatorType};
+pub use rsactuator::*;
 
 #[cfg(target_os = "linux")]
 // pub use hexmove::*;
@@ -17,7 +22,7 @@ use async_trait::async_trait;
 use eyre::eyre;
 use eyre::WrapErr;
 use kbot_pwrbrd::{PowerBoard, PowerBoardFrame};
-use kos::hal::Operation;
+use kos::hal::{Actuator, Operation};
 use kos::kos_proto::actuator::actuator_service_server::ActuatorServiceServer;
 use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
@@ -35,6 +40,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 const USE_POWERBOARD: bool = false;
+const USE_HANDS: bool = false;
 
 pub struct KbotPlatform {}
 
@@ -44,7 +50,7 @@ impl KbotPlatform {
     }
 
     fn initialize_powerboard(&self) -> eyre::Result<()> {
-        let board = PowerBoard::new("can0")
+        let board = PowerBoard::new("can2")
             .map_err(|e| eyre!("Failed to initialize power board: {}", e))?;
 
         tracing::info!("Initializing power board monitoring on can0");
@@ -140,13 +146,6 @@ impl Default for KbotPlatform {
     }
 }
 
-impl Drop for KbotPlatform {
-    fn drop(&mut self) {
-        // Ensure shutdown is called when the platform is dropped
-        let _ = self.shutdown();
-    }
-}
-
 #[async_trait]
 impl Platform for KbotPlatform {
     fn name(&self) -> &'static str {
@@ -178,26 +177,14 @@ impl Platform for KbotPlatform {
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
-                let mut services = Vec::new();
-
-                // Initialize IMU
-                match KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600) {
-                    Ok(imu) => {
-                        tracing::info!("Successfully initialized IMU");
-                        services.push(ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(
-                            Arc::new(imu),
-                        ))));
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to initialize IMU: {}", e);
-                    }
-                }
+                let mut services: Vec<ServiceEnum> = Vec::new();
 
                 // Initialize Actuator
                 let max_vel = 7200.0f32.to_radians();
-                match KBotActuator::new(
+
+                let rs_actuator = RSActuator::new(
                     operations_service.clone(),
-                    vec!["can1", "can2", "can3", "can4"],
+                    vec!["can0", "can1", "can2", "can3", "can4"],
                     Duration::from_secs(1),
                     Duration::from_millis(2),
                     &[
@@ -233,7 +220,7 @@ impl Platform for KbotPlatform {
                             14,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_angle_change: Some(55.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -287,7 +274,7 @@ impl Platform for KbotPlatform {
                             24,
                             ActuatorConfiguration {
                                 actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(45.0f32.to_radians()),
+                                max_angle_change: Some(55.0f32.to_radians()),
                                 max_velocity: Some(max_vel),
                                 command_rate_hz: Some(100.0),
                             },
@@ -404,59 +391,43 @@ impl Platform for KbotPlatform {
                     ],
                 )
                 .await
-                {
-                    Ok(actuator) => {
-                        tracing::info!("Successfully initialized Actuator");
-                        services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(
-                            ActuatorServiceImpl::new(Arc::new(actuator)),
-                        )));
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to initialize Actuator: {}", e);
-                    }
+                .wrap_err("Failed to create actuator")?;
+
+                let mut actuators_to_add: Vec<(
+                    Box<dyn Actuator + Send + Sync>,
+                    std::ops::RangeInclusive<u8>,
+                )> = vec![(Box::new(rs_actuator), 1..=49)];
+
+                if USE_HANDS {
+                    let left_hand =
+                        RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB0", 1, 51)
+                            .await
+                            .wrap_err("Failed to create left hand")?;
+
+                    let right_hand =
+                        RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB1", 1, 61)
+                            .await
+                            .wrap_err("Failed to create right hand")?;
+
+                    actuators_to_add.push((Box::new(left_hand), 51..=56));
+                    actuators_to_add.push((Box::new(right_hand), 61..=66));
                 }
 
-                // Add process manager service
-                services.push(ServiceEnum::ProcessManager(
-                    ProcessManagerServiceServer::new(ProcessManagerServiceImpl::new(Arc::new(
-                        process_manager,
+                let actuator = ProxyActuator::new(actuators_to_add);
+                let imu = KBotIMU::new(operations_service.clone(), "/dev/ttyUSB0", 9600)
+                    .wrap_err("Failed to create IMU")?;
+
+                Ok(vec![
+                    ServiceEnum::Imu(ImuServiceServer::new(IMUServiceImpl::new(Arc::new(imu)))),
+                    ServiceEnum::Actuator(ActuatorServiceServer::new(ActuatorServiceImpl::new(
+                        Arc::new(actuator),
                     ))),
-                ));
-
-                Ok(services)
+                    ServiceEnum::ProcessManager(ProcessManagerServiceServer::new(
+                        ProcessManagerServiceImpl::new(Arc::new(process_manager)),
+                    )),
+                ])
             } else {
-                let mut services = Vec::new();
-
-                // Initialize Actuator for non-Linux platforms
-                match KBotActuator::new(
-                    operations_service,
-                    vec!["can0"],
-                    Duration::from_secs(1),
-                    Duration::from_nanos(3_333_333),
-                    &[(
-                        1,
-                        robstride::ActuatorConfiguration {
-                            actuator_type: ActuatorType::RobStride04,
-                            max_angle_change: Some(2.0f32.to_radians()),
-                            max_velocity: Some(720.0f32.to_radians()),
-                            command_rate_hz: Some(100.0),
-                        },
-                    )],
-                )
-                .await
-                {
-                    Ok(actuator) => {
-                        tracing::info!("Successfully initialized Actuator");
-                        services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(
-                            ActuatorServiceImpl::new(Arc::new(actuator)),
-                        )));
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to initialize Actuator: {}", e);
-                    }
-                }
-
-                Ok(services)
+                unimplemented!("ouch");
             }
         })
     }
@@ -468,6 +439,13 @@ impl Platform for KbotPlatform {
             let _ = shutdown.send(true);
         }
         Ok(())
+    }
+}
+
+impl Drop for KbotPlatform {
+    fn drop(&mut self) {
+        // Ensure shutdown is called when the platform is dropped
+        let _ = self.shutdown();
     }
 }
 

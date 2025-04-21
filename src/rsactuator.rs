@@ -14,11 +14,11 @@ use robstride::{CH341Transport, ControlConfig, SocketCanTransport, Supervisor, T
 use std::time::Duration;
 use tokio::sync::Mutex;
 
-pub struct KBotActuator {
+pub struct RSActuator {
     supervisor: Arc<Mutex<Supervisor>>,
 }
 
-impl KBotActuator {
+impl RSActuator {
     pub async fn new(
         _operations_service: Arc<OperationsServiceImpl>,
         ports: Vec<&str>,
@@ -72,14 +72,14 @@ impl KBotActuator {
             }
         }
 
-        Ok(KBotActuator {
+        Ok(RSActuator {
             supervisor: Arc::new(Mutex::new(supervisor)),
         })
     }
 }
 
 #[async_trait]
-impl Actuator for KBotActuator {
+impl Actuator for RSActuator {
     async fn command_actuators(&self, commands: Vec<ActuatorCommand>) -> Result<Vec<ActionResult>> {
         let mut results = vec![];
         for command in commands {
