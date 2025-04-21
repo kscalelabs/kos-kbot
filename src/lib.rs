@@ -177,8 +177,6 @@ impl Platform for KbotPlatform {
                     KBotProcessManager::new(self.name().to_string(), self.serial())
                         .wrap_err("Failed to initialize GStreamer process manager")?;
 
-                let mut services: Vec<ServiceEnum> = Vec::new();
-
                 // Initialize Actuator
                 let max_vel = 7200.0f32.to_radians();
 
