@@ -9,7 +9,7 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::Result;
-use imu::hiwonder::{HiwonderReader, ImuFrequency};
+use imu::{HiwonderReader, ImuFrequency, ImuReader};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -69,21 +69,21 @@ impl HALIMU for KBotIMU {
 
         debug!(
             "Reading IMU values, accel x: {}, y: {}, z: {}, gyro x: {}, y: {}, z: {}, angle x: {}, y: {}, z: {}, quaternion x: {}, y: {}, z: {}, w: {}",
-            data.accelerometer[0], data.accelerometer[1], data.accelerometer[2],
-            data.gyroscope[0], data.gyroscope[1], data.gyroscope[2],
-            data.angle[0], data.angle[1], data.angle[2],
-            data.quaternion[0], data.quaternion[1], data.quaternion[2], data.quaternion[3],
+            data.accelerometer.unwrap_or_default().x, data.accelerometer.unwrap_or_default().y, data.accelerometer.unwrap_or_default().z,
+            data.gyroscope.unwrap_or_default().x, data.gyroscope.unwrap_or_default().y, data.gyroscope.unwrap_or_default().z,
+            data.euler.unwrap_or_default().x, data.euler.unwrap_or_default().y, data.euler.unwrap_or_default().z,
+            data.quaternion.unwrap_or_default().x, data.quaternion.unwrap_or_default().y, data.quaternion.unwrap_or_default().z, data.quaternion.unwrap_or_default().w,
         );
 
         Ok(ImuValuesResponse {
             // Accelerometer values are given in m/s^2
-            accel_x: data.accelerometer[0] as f64,
-            accel_y: data.accelerometer[1] as f64,
-            accel_z: data.accelerometer[2] as f64,
+            accel_x: data.accelerometer.unwrap_or_default().x as f64,
+            accel_y: data.accelerometer.unwrap_or_default().y as f64,
+            accel_z: data.accelerometer.unwrap_or_default().z as f64,
             // Gyroscope values are given in rad/s
-            gyro_x: data.gyroscope[0] as f64,
-            gyro_y: data.gyroscope[1] as f64,
-            gyro_z: data.gyroscope[2] as f64,
+            gyro_x: data.gyroscope.unwrap_or_default().x as f64,
+            gyro_y: data.gyroscope.unwrap_or_default().y as f64,
+            gyro_z: data.gyroscope.unwrap_or_default().z as f64,
             mag_x: None,
             mag_y: None,
             mag_z: None,
@@ -139,9 +139,9 @@ impl HALIMU for KBotIMU {
             .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
 
         Ok(EulerAnglesResponse {
-            roll: data.angle[0] as f64,
-            pitch: data.angle[1] as f64,
-            yaw: data.angle[2] as f64,
+            roll: data.euler.unwrap_or_default().x as f64,
+            pitch: data.euler.unwrap_or_default().y as f64,
+            yaw: data.euler.unwrap_or_default().z as f64,
             error: None,
         })
     }
@@ -156,10 +156,10 @@ impl HALIMU for KBotIMU {
             .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
 
         Ok(QuaternionResponse {
-            x: data.quaternion[0] as f64,
-            y: data.quaternion[1] as f64,
-            z: data.quaternion[2] as f64,
-            w: data.quaternion[3] as f64,
+            x: data.quaternion.unwrap_or_default().x as f64,
+            y: data.quaternion.unwrap_or_default().y as f64,
+            z: data.quaternion.unwrap_or_default().z as f64,
+            w: data.quaternion.unwrap_or_default().w as f64,
             error: None,
         })
     }
