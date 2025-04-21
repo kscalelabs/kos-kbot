@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use eyre::eyre;
 use eyre::WrapErr;
 use kbot_pwrbrd::{PowerBoard, PowerBoardFrame};
-use kos::hal::Operation;
+use kos::hal::{Actuator, Operation};
 use kos::kos_proto::actuator::actuator_service_server::ActuatorServiceServer;
 use kos::kos_proto::imu::imu_service_server::ImuServiceServer;
 use kos::kos_proto::process_manager::process_manager_service_server::ProcessManagerServiceServer;
@@ -146,13 +146,6 @@ impl Default for KbotPlatform {
     }
 }
 
-impl Drop for KbotPlatform {
-    fn drop(&mut self) {
-        // Ensure shutdown is called when the platform is dropped
-        let _ = self.shutdown();
-    }
-}
-
 #[async_trait]
 impl Platform for KbotPlatform {
     fn name(&self) -> &'static str {
@@ -192,12 +185,7 @@ impl Platform for KbotPlatform {
                 let rs_actuator = RSActuator::new(
                     operations_service.clone(),
                     vec![
-                        // "/dev/ttyCH341USB0",
-                        // "/dev/ttyCH341USB1",
-                        // "/dev/ttyCH341USB2",
-                        // "/dev/ttyCH341USB3",
-                        // "can0",
-                        "can1", "can0", "can2", "can3", "can4",
+                        "can0", "can1", "can2", "can3", "can4",
                     ],
                     Duration::from_secs(1),
                     Duration::from_millis(2),
@@ -406,6 +394,13 @@ impl Platform for KbotPlatform {
                 )
                 .await
                 .wrap_err("Failed to create actuator")?;
+
+                let mut actuators_to_add: Vec<(
+                    Box<dyn Actuator + Send + Sync>,
+                    std::ops::RangeInclusive<u8>,
+                )> = vec![
+                    (Box::new(rs_actuator), 1..=49),
+                ];
                 
                 if USE_HANDS {
                     let left_hand = RH56Actuator::new(
@@ -425,14 +420,7 @@ impl Platform for KbotPlatform {
                     )
                     .await
                     .wrap_err("Failed to create right hand")?;
-                }
 
-
-                actuators_to_add = vec![
-                    (Box::new(rs_actuator), 1..=49),
-                ]
-
-                if USE_HANDS {
                     actuators_to_add.push((Box::new(left_hand), 51..=56));
                     actuators_to_add.push((Box::new(right_hand), 61..=66));
                 }
@@ -456,6 +444,7 @@ impl Platform for KbotPlatform {
         })
     }
 
+
     fn shutdown(&mut self) -> eyre::Result<()> {
         // Signal powerboard monitoring to stop
         if let Some(shutdown) = SHUTDOWN_SIGNAL.get().and_then(|lock| lock.lock().take()) {
@@ -463,6 +452,14 @@ impl Platform for KbotPlatform {
             let _ = shutdown.send(true);
         }
         Ok(())
+    }
+
+}
+
+impl Drop for KbotPlatform {
+    fn drop(&mut self) {
+        // Ensure shutdown is called when the platform is dropped
+        let _ = self.shutdown();
     }
 }
 
