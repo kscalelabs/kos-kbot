@@ -11,6 +11,11 @@ Welcome to the K-Scale OS build for the K-Bot!
 ### Native build
 
 Native build with stub features:
+
+```
+apt install protobuf-compiler libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer1.0-dev libglib2.0-dev  pkg-config
+```
+
 ```bash
 cargo build
 ```
