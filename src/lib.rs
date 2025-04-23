@@ -39,11 +39,19 @@ use std::time::Duration;
 const USE_POWERBOARD: bool = false;
 const USE_HANDS: bool = false;
 
-pub struct KbotPlatform {}
+pub struct KbotPlatform {
+    imu: bool,
+    actuators: bool,
+}
 
 impl KbotPlatform {
     pub fn new() -> Self {
-        Self {}
+        Self { imu: false, actuators: false }
+    }
+
+    pub fn set_feature_flags(&mut self, imu: bool, actuators: bool) {
+        self.imu = imu;
+        self.actuators = actuators;
     }
 
     fn initialize_powerboard(&self) -> eyre::Result<()> {
@@ -154,9 +162,16 @@ impl Platform for KbotPlatform {
         "00000000".to_string()
     }
 
-    fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
+    /*fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
         // Initialize the platform
         if USE_POWERBOARD {
+            self.initialize_powerboard()?;
+        }
+        Ok(())
+    }*/
+
+    fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
+        if self.actuators {
             self.initialize_powerboard()?;
         }
         Ok(())
@@ -176,326 +191,329 @@ impl Platform for KbotPlatform {
 
                 let mut services = Vec::new();
 
-                // Initialize IMU based on feature flags
-                let imu_service = {
-                    #[cfg(feature = "imu_hiwonder")]
-                    {
-                        tracing::info!("Using Hiwonder IMU (feature: imu_hiwonder)");
-                        match kbot_imu::hiwonder::KBotIMU::new(
-                            operations_service.clone(),
-                            "/dev/ttyUSB0",
-                            9600,
-                        ) {
-                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
-                                IMUServiceImpl::new(Arc::new(imu)),
-                            ))),
-                            Err(e) => {
-                                tracing::warn!("Failed to initialize Hiwonder IMU: {}", e);
-                                None
+                if self.imu {
+                    // Initialize IMU based on feature flags
+                    let imu_service = {
+                        #[cfg(feature = "imu_hiwonder")]
+                        {
+                            tracing::info!("Using Hiwonder IMU (feature: imu_hiwonder)");
+                            match kbot_imu::hiwonder::KBotIMU::new(
+                                operations_service.clone(),
+                                "/dev/ttyUSB0",
+                                230400,
+                            ) {
+                                Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
+                                    IMUServiceImpl::new(Arc::new(imu)),
+                                ))),
+                                Err(e) => {
+                                    tracing::warn!("Failed to initialize Hiwonder IMU: {}", e);
+                                    None
+                                }
                             }
                         }
-                    }
-                    #[cfg(feature = "imu_bno055")]
-                    {
-                        tracing::info!("Using BNO055 IMU (feature: imu_bno055)");
-                        match kbot_imu::bno055::KBotIMU::new(
-                            operations_service.clone(),
-                            "/dev/i2c-1",
-                        ) {
-                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
-                                IMUServiceImpl::new(Arc::new(imu)),
-                            ))),
-                            Err(e) => {
-                                tracing::warn!("Failed to initialize BNO055 IMU: {}", e);
-                                None
+                        #[cfg(feature = "imu_bno055")]
+                        {
+                            tracing::info!("Using BNO055 IMU (feature: imu_bno055)");
+                            match kbot_imu::bno055::KBotIMU::new(
+                                operations_service.clone(),
+                                "/dev/i2c-1",
+                            ) {
+                                Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
+                                    IMUServiceImpl::new(Arc::new(imu)),
+                                ))),
+                                Err(e) => {
+                                    tracing::warn!("Failed to initialize BNO055 IMU: {}", e);
+                                    None
+                                }
                             }
                         }
-                    }
-                    #[cfg(feature = "imu_hexmove")]
-                    {
-                        tracing::info!("Using Hexmove IMU (feature: imu_hexmove)");
-                        match kbot_imu::hexmove::KBotIMU::new(
-                            operations_service.clone(),
-                            "can0",
-                            1,
-                            1,
-                        ) {
-                            // Example CAN params
-                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
-                                IMUServiceImpl::new(Arc::new(imu)),
-                            ))),
-                            Err(e) => {
-                                tracing::warn!("Failed to initialize Hexmove IMU: {}", e);
-                                None
+                        #[cfg(feature = "imu_hexmove")]
+                        {
+                            tracing::info!("Using Hexmove IMU (feature: imu_hexmove)");
+                            match kbot_imu::hexmove::KBotIMU::new(
+                                operations_service.clone(),
+                                "can0",
+                                1,
+                                1,
+                            ) {
+                                // Example CAN params
+                                Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
+                                    IMUServiceImpl::new(Arc::new(imu)),
+                                ))),
+                                Err(e) => {
+                                    tracing::warn!("Failed to initialize Hexmove IMU: {}", e);
+                                    None
+                                }
                             }
                         }
-                    }
-                    // The compile_error in mod.rs should prevent this arm from ever being needed at runtime,
-                    // but we include it to satisfy the compiler if no features were hypothetically passed.
-                    #[cfg(not(any(
-                        feature = "imu_hiwonder",
-                        feature = "imu_hexmove",
-                        feature = "imu_bno055"
-                    )))]
-                    {
-                        tracing::error!("Build configuration error: No IMU feature selected!"); // Should not happen
-                        None
-                    }
-                };
+                        // The compile_error in mod.rs should prevent this arm from ever being needed at runtime,
+                        // but we include it to satisfy the compiler if no features were hypothetically passed.
+                        #[cfg(not(any(
+                            feature = "imu_hiwonder",
+                            feature = "imu_hexmove",
+                            feature = "imu_bno055"
+                        )))]
+                        {
+                            tracing::error!("Build configuration error: No IMU feature selected!"); // Should not happen
+                            None
+                        }
+                    };
 
-                if let Some(service) = imu_service {
-                    tracing::info!("Successfully initialized IMU service.");
-                    services.push(service);
-                } else {
-                    tracing::warn!("IMU service not added due to initialization failure or configuration issue.");
+                    if let Some(service) = imu_service {
+                        tracing::info!("Successfully initialized IMU service.");
+                        services.push(service);
+                    } else {
+                        tracing::warn!("IMU service not added due to initialization failure or configuration issue.");
+                    }
                 }
 
-                // Initialize Actuator
-                let max_vel = 7200.0f32.to_radians();
+                if self.actuators { 
+                    // Initialize Actuator
+                    let max_vel = 7200.0f32.to_radians();
 
-                let rs_actuator = RSActuator::new(
-                    operations_service.clone(),
-                    vec!["can0", "can1", "can2", "can3", "can4"],
-                    Duration::from_secs(1),
-                    Duration::from_millis(2),
-                    &[
-                        // Left Arm
-                        (
-                            11,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            12,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            13,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(45.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            14,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(55.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            15,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(60.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        // (
-                        //     16,
-                        //     ActuatorConfiguration {
-                        //         actuator_type: ActuatorType::RobStride00,
-                        //         max_angle_change: Some(15.0f32.to_radians()),
-                        //         max_velocity: Some(10.0f32.to_radians()),
-                        //     },
-                        // ),
-                        // Right Arm
-                        (
-                            21,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            22,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(30.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            23,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(45.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            24,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(55.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            25,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(60.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        // (
-                        //     26,
-                        //     ActuatorConfiguration {
-                        //         actuator_type: ActuatorType::RobStride00,
-                        //         max_angle_change: Some(15.0f32.to_radians()),
-                        //         max_velocity: Some(10.0f32.to_radians()),
-                        //     },
-                        // ),
-                        // Left Leg
-                        (
-                            31,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0 * 30.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            32,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            33,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            34,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            35,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        // Right Leg
-                        (
-                            41,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0 * 30.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            42,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            43,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride03,
-                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            44,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride04,
-                                max_angle_change: Some(2.0 * 45.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                        (
-                            45,
-                            ActuatorConfiguration {
-                                actuator_type: ActuatorType::RobStride02,
-                                max_angle_change: Some(2.0 * 90.0f32.to_radians()),
-                                max_velocity: Some(max_vel),
-                                command_rate_hz: Some(100.0),
-                            },
-                        ),
-                    ],
-                )
-                .await
-                .wrap_err("Failed to create actuator")?;
+                    let rs_actuator = RSActuator::new(
+                        operations_service.clone(),
+                        vec!["can0", "can1", "can2", "can3", "can4"],
+                        Duration::from_secs(1),
+                        Duration::from_millis(2),
+                        &[
+                            // Left Arm
+                            (
+                                11,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(30.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                12,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(30.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                13,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(45.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                14,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(55.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                15,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(60.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            // (
+                            //     16,
+                            //     ActuatorConfiguration {
+                            //         actuator_type: ActuatorType::RobStride00,
+                            //         max_angle_change: Some(15.0f32.to_radians()),
+                            //         max_velocity: Some(10.0f32.to_radians()),
+                            //     },
+                            // ),
+                            // Right Arm
+                            (
+                                21,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(30.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                22,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(30.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                23,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(45.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                24,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(55.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                25,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(60.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            // (
+                            //     26,
+                            //     ActuatorConfiguration {
+                            //         actuator_type: ActuatorType::RobStride00,
+                            //         max_angle_change: Some(15.0f32.to_radians()),
+                            //         max_velocity: Some(10.0f32.to_radians()),
+                            //     },
+                            // ),
+                            // Left Leg
+                            (
+                                31,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride04,
+                                    max_angle_change: Some(2.0 * 30.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                32,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                33,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                34,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride04,
+                                    max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                35,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            // Right Leg
+                            (
+                                41,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride04,
+                                    max_angle_change: Some(2.0 * 30.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                42,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                43,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride03,
+                                    max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                44,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride04,
+                                    max_angle_change: Some(2.0 * 45.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                            (
+                                45,
+                                ActuatorConfiguration {
+                                    actuator_type: ActuatorType::RobStride02,
+                                    max_angle_change: Some(2.0 * 90.0f32.to_radians()),
+                                    max_velocity: Some(max_vel),
+                                    command_rate_hz: Some(100.0),
+                                },
+                            ),
+                        ],
+                    )
+                    .await
+                    .wrap_err("Failed to create actuator")?;
 
-                let mut actuators_to_add: Vec<(
-                    Box<dyn Actuator + Send + Sync>,
-                    std::ops::RangeInclusive<u8>,
-                )> = vec![(Box::new(rs_actuator), 1..=49)];
+                    let mut actuators_to_add: Vec<(
+                        Box<dyn Actuator + Send + Sync>,
+                        std::ops::RangeInclusive<u8>,
+                    )> = vec![(Box::new(rs_actuator), 1..=49)];
 
-                if USE_HANDS {
-                    let left_hand =
-                        RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB0", 1, 51)
-                            .await
-                            .wrap_err("Failed to create left hand")?;
+                    if USE_HANDS {
+                        let left_hand =
+                            RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB0", 1, 51)
+                                .await
+                                .wrap_err("Failed to create left hand")?;
 
-                    let right_hand =
-                        RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB1", 1, 61)
-                            .await
-                            .wrap_err("Failed to create right hand")?;
+                        let right_hand =
+                            RH56Actuator::new(operations_service.clone(), "/dev/ttyUSB1", 1, 61)
+                                .await
+                                .wrap_err("Failed to create right hand")?;
 
-                    actuators_to_add.push((Box::new(left_hand), 51..=56));
-                    actuators_to_add.push((Box::new(right_hand), 61..=66));
+                        actuators_to_add.push((Box::new(left_hand), 51..=56));
+                        actuators_to_add.push((Box::new(right_hand), 61..=66));
+                    }
+
+                    let actuator = ProxyActuator::new(actuators_to_add);
+
+                    services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(
+                        ActuatorServiceImpl::new(Arc::new(actuator)),
+                    )));
+
+                    services.push(ServiceEnum::ProcessManager(
+                        ProcessManagerServiceServer::new(ProcessManagerServiceImpl::new(Arc::new(
+                            process_manager,
+                        ))),
+                    ));
                 }
-
-                let actuator = ProxyActuator::new(actuators_to_add);
-
-                services.push(ServiceEnum::Actuator(ActuatorServiceServer::new(
-                    ActuatorServiceImpl::new(Arc::new(actuator)),
-                )));
-
-                services.push(ServiceEnum::ProcessManager(
-                    ProcessManagerServiceServer::new(ProcessManagerServiceImpl::new(Arc::new(
-                        process_manager,
-                    ))),
-                ));
-
                 Ok(services)
             } else {
                 unimplemented!("ouch");
