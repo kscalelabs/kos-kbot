@@ -32,7 +32,7 @@ impl KBotIMU {
             interface, baud_rate
         );
 
-        let imu = match HiwonderReader::new(interface, baud_rate, Duration::from_millis(100), false) {
+        let imu = match HiwonderReader::new(interface, baud_rate, Duration::from_millis(100), true) {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
                 if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, Duration::from_millis(100)) {
