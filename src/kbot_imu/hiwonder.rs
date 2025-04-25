@@ -9,7 +9,7 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::Result;
-use imu::{HiwonderReader, ImuFrequency, ImuReader};
+use imu::{HiwonderReader, ImuFrequency, ImuReader, HiwonderOutput};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -32,12 +32,15 @@ impl KBotIMU {
             interface, baud_rate
         );
 
-        let imu = match HiwonderReader::new(interface, baud_rate) {
+        let imu = match HiwonderReader::new(interface, baud_rate, Duration::from_millis(100), false) {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
-                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100) {
+                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, Duration::from_millis(100)) {
                     error!("Failed to set IMU frequency: {}", e);
                 }
+                imu.set_output_mode(HiwonderOutput::QUATERNION | HiwonderOutput::ANGLE | HiwonderOutput::GYRO | HiwonderOutput::ACC, Duration::from_secs(1))?;
+                imu.set_frequency(ImuFrequency::Hz100, Duration::from_secs(1))?;
+                imu.set_bandwidth(42, Duration::from_secs(1))?;
                 imu
             }
             Err(e) => {
