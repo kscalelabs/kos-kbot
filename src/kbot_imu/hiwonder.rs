@@ -13,6 +13,7 @@ use imu::{HiwonderReader, ImuFrequency, ImuReader, HiwonderOutput};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
+use std::env;
 
 const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
 
@@ -51,6 +52,30 @@ impl KBotIMU {
                 }else{
                     info!("Bandwidth verified");
                 }
+
+                info!("Reading IMU parameters...");
+                let imu_parameters = imu.read_all_registers(Duration::from_secs(1)).unwrap();
+                if let Ok(parameters_json) = serde_json::to_string_pretty(&imu_parameters) {
+                    let now = chrono::Local::now();
+                    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+                    let base_log_dir: String = env::var("KBOT_LOG_DIR")
+                        .unwrap_or_else(|_| env::temp_dir().join("kos-kbot").to_string_lossy().to_string());
+                    let log_dir = format!("{}/{}", base_log_dir, timestamp);
+
+                    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                        error!("Failed to create log directory {}: {}", log_dir, e);
+                    } else {
+                        let log_path = format!("{}/imu_parameters.json", log_dir);
+                        match std::fs::write(&log_path, parameters_json) {
+                            Ok(_) => info!("IMU parameters saved to {}", log_path),
+                            Err(e) => error!("Failed to write IMU parameters to {}: {}", log_path, e),
+                        }
+                    }
+                } else {
+                    error!("Failed to serialize IMU parameters to JSON");
+                }
+
                 imu
             }
             Err(e) => {
