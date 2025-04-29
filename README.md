@@ -37,7 +37,7 @@ RUST_LOG=debug,krec=warn cargo run
 
 ## Logging
 
-In addition to console logging, the K-Bot writes additional logs (e.g. IMU parameters) to a file in `KBOT_LOG_DIR` (defaults to `~/tmp/kos-kbot`). You can set this environment variable to any directory you want to use for logging by running:
+In addition to console logging, the K-Bot writes additional logs (e.g. IMU parameters) to a file in `KBOT_LOG_DIR` (defaults to `/tmp/kos-kbot`). You can set this environment variable to any directory you want to use for logging by running:
 
 ```bash
 export KBOT_LOG_DIR=/path/to/log/directory
