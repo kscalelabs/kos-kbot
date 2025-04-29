@@ -1,0 +1,14 @@
+name: PR Require Checklist
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  require-all-checkboxes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate that all checkboxes are checked
+        uses: mheap/require-checklist-action@v2
+        with:
+          requireChecklist: true 
