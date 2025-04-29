@@ -1,4 +1,4 @@
-# K-Scale OS - K-Bot
+# KOS-KBOT
 
 Welcome to the K-Scale OS build for the K-Bot!
 
