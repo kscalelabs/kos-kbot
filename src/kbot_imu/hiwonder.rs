@@ -16,6 +16,7 @@ use std::time::Duration;
 use tracing::{debug, error, info};
 
 const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
+const IMU_WRITE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
@@ -43,25 +44,31 @@ impl KBotIMU {
                         | HiwonderOutput::ANGLE
                         | HiwonderOutput::GYRO
                         | HiwonderOutput::ACC,
-                    Duration::from_secs(4),
+                    IMU_WRITE_TIMEOUT,
                 ) {
                     error!("Failed to verify output mode: {}. Continuing...", e);
                 } else {
                     info!("Output mode verified...");
                 }
-                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, Duration::from_secs(4)) {
+                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, IMU_WRITE_TIMEOUT) {
                     error!("Failed to verify IMU frequency: {}. Continuing...", e);
                 } else {
                     info!("100Hz frequency verified...");
                 }
-                if let Err(e) = imu.set_bandwidth(42, Duration::from_secs(4)) {
+                if let Err(e) = imu.set_bandwidth(42, IMU_WRITE_TIMEOUT) {
                     error!("Failed to verify bandwidth: {}. Continuing...", e);
                 } else {
                     info!("Bandwidth verified");
                 }
 
                 info!("Reading IMU parameters...");
-                let imu_parameters = imu.read_all_registers(Duration::from_secs(1)).unwrap();
+                let imu_parameters = match imu.read_all_registers(Duration::from_secs(1)) {
+                    Ok(parameters) => parameters,
+                    Err(e) => {
+                        error!("Failed to read IMU parameters: {}", e);
+                        return Err(eyre::eyre!("Failed to read IMU parameters: {}", e));
+                    }
+                };
 
                 let hex_parameters: Vec<(String, Vec<String>)> = imu_parameters
                     .into_iter()
