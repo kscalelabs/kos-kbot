@@ -35,12 +35,22 @@ impl KBotIMU {
         let imu = match HiwonderReader::new(interface, baud_rate, Duration::from_millis(100), true) {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
-                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, Duration::from_millis(100)) {
-                    error!("Failed to set IMU frequency: {}", e);
+                info!("Setting and verifying params...");
+                if let Err(e) = imu.set_output_mode(HiwonderOutput::QUATERNION | HiwonderOutput::ANGLE | HiwonderOutput::GYRO | HiwonderOutput::ACC, Duration::from_secs(4)){
+                    error!("Failed to verify output mode: {}. Continuing...", e);
+                }else{
+                    info!("Output mode verified...");
                 }
-                imu.set_output_mode(HiwonderOutput::QUATERNION | HiwonderOutput::ANGLE | HiwonderOutput::GYRO | HiwonderOutput::ACC, Duration::from_secs(1))?;
-                imu.set_frequency(ImuFrequency::Hz100, Duration::from_secs(1))?;
-                imu.set_bandwidth(42, Duration::from_secs(1))?;
+                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, Duration::from_secs(4)){
+                    error!("Failed to verify IMU frequency: {}. Continuing...", e);
+                }else{
+                    info!("100Hz frequency verified...");
+                }
+                if let Err(e) = imu.set_bandwidth(42, Duration::from_secs(4)){
+                    error!("Failed to verify bandwidth: {}. Continuing...", e);
+                }else{
+                    info!("Bandwidth verified");
+                }
                 imu
             }
             Err(e) => {
