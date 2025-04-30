@@ -39,6 +39,9 @@ use std::time::Duration;
 const USE_POWERBOARD: bool = false;
 const USE_HANDS: bool = false;
 
+const IMU_MONITOR_INTERVAL: u64 = 2; // seconds
+const FREQUENCY_THRESHOLD: f32 = 100.0; // Hz
+
 pub struct KbotPlatform {}
 
 impl KbotPlatform {
@@ -55,11 +58,14 @@ impl KbotPlatform {
             .configure_board()
             .map_err(|e| eyre!("Failed to configure power board: {}", e))?;
 
-        // Create a shutdown channel
-        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
-
-        // Store sender in a static or global location for shutdown
-        SHUTDOWN_SIGNAL.get_or_init(|| parking_lot::Mutex::new(Some(shutdown_tx)));
+        // Subscribe to the globally initialized shutdown signal
+        let shutdown_rx = SHUTDOWN_SIGNAL
+            .get()
+            .expect("SHUTDOWN_SIGNAL should be initialized by now")
+            .lock()
+            .as_ref()
+            .expect("Shutdown sender should exist")
+            .subscribe();
 
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Runtime::new()
@@ -68,7 +74,7 @@ impl KbotPlatform {
             rt.block_on(async {
                 let mut counter = 0u64;
                 let mut interval = tokio::time::interval(Duration::from_millis(100));
-                let mut shutdown_rx = shutdown_rx;
+                let mut shutdown_rx = shutdown_rx; // Use the subscribed receiver
 
                 loop {
                     tokio::select! {
@@ -124,9 +130,11 @@ impl KbotPlatform {
                                 tracing::error!("Failed to read power board frame");
                             }
                         }
-                        Ok(_) = shutdown_rx.changed() => {
-                            tracing::info!("Shutting down power board monitoring");
-                            break;
+                        Ok(_) = shutdown_rx.changed() => { // Check the subscribed receiver
+                            if *shutdown_rx.borrow() {
+                                tracing::info!("Shutting down power board monitoring");
+                                break;
+                            }
                         }
                     }
                 }
@@ -155,6 +163,10 @@ impl Platform for KbotPlatform {
     }
 
     fn initialize(&mut self, _operations_service: Arc<OperationsServiceImpl>) -> eyre::Result<()> {
+        let (shutdown_tx, _) = tokio::sync::watch::channel(false);
+        SHUTDOWN_SIGNAL.get_or_init(|| parking_lot::Mutex::new(Some(shutdown_tx)));
+        tracing::debug!("Global shutdown signal initialized.");
+
         // Initialize the platform
         if USE_POWERBOARD {
             self.initialize_powerboard()?;
@@ -186,9 +198,82 @@ impl Platform for KbotPlatform {
                             "/dev/ttyUSB0",
                             230400,
                         ) {
-                            Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
-                                IMUServiceImpl::new(Arc::new(imu)),
-                            ))),
+                            Ok(imu) => {
+                                let imu_arc = Arc::new(imu);
+                                let imu_monitor_arc = imu_arc.clone();
+
+                                let shutdown_rx_clone = SHUTDOWN_SIGNAL.get().map(|lock| {
+                                    let guard = lock.lock();
+                                    guard
+                                        .as_ref()
+                                        .expect(
+                                            "Shutdown signal sender should exist if initialized",
+                                        )
+                                        .subscribe()
+                                });
+
+                                tokio::spawn(async move {
+                                    if let Some(mut shutdown_rx) = shutdown_rx_clone {
+                                        tracing::info!(
+                                            "Starting Hiwonder IMU frequency monitoring task."
+                                        );
+                                        let mut interval = tokio::time::interval(
+                                            Duration::from_secs(IMU_MONITOR_INTERVAL),
+                                        );
+
+                                        tokio::time::sleep(Duration::from_secs(2)).await;
+                                        tracing::info!(
+                                            "IMU monitoring starting after initialization delay"
+                                        );
+
+                                        loop {
+                                            tokio::select! {
+                                                _ = interval.tick() => {
+                                                    let telemetry = Telemetry::get().await;
+
+                                                    match imu_monitor_arc.get_effective_frequency() {
+                                                        Ok(freq) => {
+                                                            if let Some(telemetry) = &telemetry {
+                                                                let data = serde_json::json!({
+                                                                    "frequency": freq,
+                                                                });
+                                                                if let Err(e) = telemetry.publish("imu/frequency", &data).await {
+                                                                    tracing::error!("Failed to publish IMU frequency: {:?}", e);
+                                                                }
+                                                            }
+
+                                                            if freq < FREQUENCY_THRESHOLD {
+                                                                tracing::warn!(
+                                                                    "Hiwonder IMU frequency ({:.2} Hz) is below threshold ({:.2} Hz)",
+                                                                    freq, FREQUENCY_THRESHOLD
+                                                                );
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            tracing::error!("Failed to get IMU frequency: {}", e);
+                                                        }
+                                                    }
+                                                }
+                                                result = shutdown_rx.changed() => {
+                                                    if result.is_ok() && *shutdown_rx.borrow() {
+                                                        tracing::info!("Shutting down IMU frequency monitoring task.");
+                                                        break;
+                                                    } else if result.is_err() {
+                                                        tracing::info!("IMU monitor shutdown channel closed.");
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        tracing::error!("Failed to get shutdown signal for IMU monitor task. Task will not run.");
+                                    }
+                                });
+
+                                Some(ServiceEnum::Imu(ImuServiceServer::new(
+                                    IMUServiceImpl::new(imu_arc),
+                                )))
+                            }
                             Err(e) => {
                                 tracing::warn!("Failed to initialize Hiwonder IMU: {}", e);
                                 None
