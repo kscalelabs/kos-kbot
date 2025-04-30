@@ -184,7 +184,7 @@ impl Platform for KbotPlatform {
                         match kbot_imu::hiwonder::KBotIMU::new(
                             operations_service.clone(),
                             "/dev/ttyUSB0",
-                            9600,
+                            230400,
                         ) {
                             Ok(imu) => Some(ServiceEnum::Imu(ImuServiceServer::new(
                                 IMUServiceImpl::new(Arc::new(imu)),

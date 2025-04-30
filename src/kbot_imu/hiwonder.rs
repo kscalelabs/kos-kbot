@@ -9,12 +9,14 @@ use kos::{
 
 use async_trait::async_trait;
 use eyre::Result;
-use imu::{HiwonderReader, ImuFrequency, ImuReader};
+use imu::{HiwonderOutput, HiwonderReader, ImuFrequency, ImuReader};
+use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
 const RAD_TO_DEG: f64 = 180.0 / std::f64::consts::PI;
+const IMU_WRITE_TIMEOUT: Duration = Duration::from_secs(4);
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
@@ -32,12 +34,75 @@ impl KBotIMU {
             interface, baud_rate
         );
 
-        let imu = match HiwonderReader::new(interface, baud_rate) {
+        let imu = match HiwonderReader::new(interface, baud_rate, Duration::from_millis(100), true)
+        {
             Ok(imu) => {
                 info!("Successfully created IMU reader");
-                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100) {
-                    error!("Failed to set IMU frequency: {}", e);
+                info!("Setting and verifying params...");
+                if let Err(e) = imu.set_output_mode(
+                    HiwonderOutput::QUATERNION
+                        | HiwonderOutput::ANGLE
+                        | HiwonderOutput::GYRO
+                        | HiwonderOutput::ACC,
+                    IMU_WRITE_TIMEOUT,
+                ) {
+                    error!("Failed to verify output mode: {}. Continuing...", e);
+                } else {
+                    info!("Output mode verified...");
                 }
+                if let Err(e) = imu.set_frequency(ImuFrequency::Hz100, IMU_WRITE_TIMEOUT) {
+                    error!("Failed to verify IMU frequency: {}. Continuing...", e);
+                } else {
+                    info!("100Hz frequency verified...");
+                }
+                if let Err(e) = imu.set_bandwidth(42, IMU_WRITE_TIMEOUT) {
+                    error!("Failed to verify bandwidth: {}. Continuing...", e);
+                } else {
+                    info!("Bandwidth verified");
+                }
+
+                info!("Reading IMU parameters...");
+                let imu_parameters = match imu.read_all_registers(Duration::from_secs(1)) {
+                    Ok(parameters) => parameters,
+                    Err(e) => {
+                        error!("Failed to read IMU parameters: {}", e);
+                        return Err(eyre::eyre!("Failed to read IMU parameters: {}", e));
+                    }
+                };
+
+                let hex_parameters: Vec<(String, Vec<String>)> = imu_parameters
+                    .into_iter()
+                    .map(|(name, values)| {
+                        let name_str = format!("{:?}", name);
+                        let hex_values =
+                            values.into_iter().map(|v| format!("{:#04x}", v)).collect();
+                        (name_str, hex_values)
+                    })
+                    .collect();
+
+                if let Ok(parameters_json) = serde_json::to_string_pretty(&hex_parameters) {
+                    let now = chrono::Local::now();
+                    let timestamp = now.format("%Y%m%d_%H%M%S").to_string();
+
+                    let base_log_dir: String =
+                        env::var("KBOT_LOG_DIR").unwrap_or_else(|_| "/tmp/kos-kbot".to_string());
+                    let log_dir = format!("{}/{}", base_log_dir, timestamp);
+
+                    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+                        error!("Failed to create log directory {}: {}", log_dir, e);
+                    } else {
+                        let log_path = format!("{}/imu_parameters.json", log_dir);
+                        match std::fs::write(&log_path, parameters_json) {
+                            Ok(_) => info!("IMU parameters saved to {}", log_path),
+                            Err(e) => {
+                                error!("Failed to write IMU parameters to {}: {}", log_path, e)
+                            }
+                        }
+                    }
+                } else {
+                    error!("Failed to serialize IMU parameters (hex) to JSON"); // Updated error message
+                }
+
                 imu
             }
             Err(e) => {

@@ -12,7 +12,7 @@ use eyre::Result;
 use imu::{Bno055Reader, ImuReader};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 pub struct KBotIMU {
     _operations_service: Arc<OperationsServiceImpl>,
