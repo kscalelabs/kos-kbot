@@ -116,6 +116,17 @@ impl KBotIMU {
             imu: Arc::new(Mutex::new(imu)),
         })
     }
+
+    pub fn get_effective_frequency(&self) -> Result<f32> {
+        let data = self
+            .imu
+            .lock()
+            .map_err(|e| eyre::eyre!("Failed to lock IMU mutex: {}", e))?
+            .get_data()
+            .map_err(|e| eyre::eyre!("Failed to read IMU data: {}", e))?;
+
+        Ok(data.effective_frequency)
+    }
 }
 
 impl Default for KBotIMU {
