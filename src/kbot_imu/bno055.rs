@@ -10,7 +10,7 @@ use kos::{
 use async_trait::async_trait;
 use eyre::Result;
 use imu::{Bno055Reader, ImuReader};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use std::time::Duration;
 use tracing::{debug, error, info};
 
@@ -113,6 +113,10 @@ impl HALIMU for KBotIMU {
             done: true,
             result: None,
         })
+    }
+
+    async fn get_calibration_state(&self) -> Result<HashMap<String, i32>> {
+        unimplemented!("not yet implemented");
     }
 
     async fn zero(

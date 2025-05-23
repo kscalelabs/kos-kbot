@@ -10,7 +10,7 @@ use kos::{
 use async_trait::async_trait;
 use eyre::Result;
 use imu::{HiwonderOutput, HiwonderReader, ImuFrequency, ImuReader};
-use std::env;
+use std::{collections::HashMap, env};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tracing::{debug, error, info};
@@ -156,6 +156,11 @@ impl HALIMU for KBotIMU {
             mag_z: None,
             error: None,
         })
+    }
+
+    async fn get_calibration_state(&self) -> Result<HashMap<String, i32>> {
+        let calibration_state = HashMap::new();
+        Ok(calibration_state)
     }
 
     async fn get_advanced_values(&self) -> Result<ImuAdvancedValuesResponse> {

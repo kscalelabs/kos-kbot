@@ -10,7 +10,7 @@ use kos::{
 use async_trait::async_trait;
 use eyre::{Result, WrapErr};
 use imu::{HexmoveImuReader, ImuReader};
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 use std::time::Duration;
 use tracing::{debug, error, info, trace};
 
@@ -102,6 +102,10 @@ impl IMU for KBotIMU {
             temp: None,
             error: None,
         })
+    }
+
+    async fn get_calibration_state(&self) -> Result<HashMap<String, i32>> {
+        Ok(HashMap::new())
     }
 
     async fn calibrate(&self) -> Result<Operation> {

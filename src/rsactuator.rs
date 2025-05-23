@@ -10,9 +10,11 @@ use kos::{
     },
 };
 
+use prost_types::Struct;
 use robstride::{CH341Transport, ControlConfig, SocketCanTransport, Supervisor, TransportType};
 use std::time::Duration;
 use tokio::sync::Mutex;
+use tracing::info;
 
 pub struct RSActuator {
     supervisor: Arc<Mutex<Supervisor>>,
@@ -204,5 +206,9 @@ impl Actuator for RSActuator {
             }
         }
         Ok(responses)
+    }
+
+    async fn get_parameters(&self, _actuator_ids: Vec<u32>) -> Result<Vec<(u32, Struct)>> {
+        unimplemented!()
     }
 }

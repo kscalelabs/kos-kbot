@@ -9,6 +9,7 @@ use kos::{
         common::{ActionResult, ErrorCode},
     },
 };
+use prost_types::Struct;
 
 pub struct RH56Actuator {
     hand: Arc<Hand>,
@@ -106,5 +107,9 @@ impl Actuator for RH56Actuator {
             }
         }
         Ok(responses)
+    }
+
+    async fn get_parameters(&self, _actuator_ids: Vec<u32>) -> Result<Vec<(u32, Struct)>> {
+        unimplemented!()
     }
 }

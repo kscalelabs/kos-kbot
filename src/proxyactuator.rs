@@ -5,6 +5,7 @@ use kos::{
     hal::{ActionResponse, Actuator, ActuatorCommand, CalibrateActuatorRequest},
     kos_proto::{actuator::*, common::ActionResult},
 };
+use prost_types::Struct;
 
 struct ActuatorWithRange {
     actuator: Box<dyn Actuator + Send + Sync>,
@@ -90,5 +91,9 @@ impl Actuator for ProxyActuator {
         }
 
         Ok(all_responses)
+    }
+
+    async fn get_parameters(&self, _actuator_ids: Vec<u32>) -> Result<Vec<(u32, Struct)>> {
+        unimplemented!()
     }
 }

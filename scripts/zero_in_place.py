@@ -4,9 +4,10 @@ import pykos
 async def main():
     async with pykos.KOS() as kos:
         # for id in range(60):
-        for id in [25]:
+        for id in [34, 44]:
             try:
                 await kos.actuator.configure_actuator(actuator_id=id, torque_enabled=False, zero_position=True)
+                print(f"Configured actuator {id}")
             except Exception as e:
                 print(f"Failed to configure actuator {id}")
 
