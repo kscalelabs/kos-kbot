@@ -103,6 +103,7 @@ impl Actuator for RH56Actuator {
                     voltage: None,
                     current: None,
                     faults: Vec::new(),
+                    ..Default::default()
                 });
             }
         }

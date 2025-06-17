@@ -202,6 +202,7 @@ impl Actuator for RSActuator {
                     voltage: None,
                     current: None,
                     faults,
+                    ..Default::default()
                 });
             }
         }

@@ -21,8 +21,8 @@ imu_bno055=[]
 
 [dependencies]
 serialport = "4.7"
-# kos = "0.7.4"
-kos = {path="./third_party/kos/kos/"}
+kos = "0.7.10"
+# kos = {path="./third_party/kos/kos/"}
 kbot-pwrbrd = "0.2.2"
 eyre = "0.6"
 krec = "0.2"
